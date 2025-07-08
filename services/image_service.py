@@ -4,6 +4,7 @@ import base64
 import aiofiles
 from PIL import Image
 import io
+import random
 
 class ImageService:
     def __init__(self):
@@ -13,19 +14,94 @@ class ImageService:
     def generate_sketch_image(self, sentence: str, job_id: str, frame_index: int) -> str:
         """
         Generate a whiteboard sketch-style image from a sentence using DALL-E
+        Automatically adds minimal text (heading/label) to diagrams or 1-2 random images per job.
         """
         try:
             print(f"[ImageService] Job ID: {job_id} | Generating image for frame {frame_index}: {sentence[:50]}...")
+
+            # --- Label/heading logic ---
+            # Detect if this is a diagram or label-worthy image
+            diagram_keywords = ["diagram", "flowchart", "process", "structure", "cycle", "chart", "graph", "map", "step", "labeled"]
+            is_diagram = any(kw in sentence.lower() for kw in diagram_keywords)
             
-            # Create optimized prompt for whiteboard sketch style
-            prompt = self._create_sketch_prompt(sentence)
+            # Use a temp file to store which frames get labels for this job_id
+            label_file = f"outputs/.label_indices_{job_id}.txt"
+            if os.path.exists(label_file):
+                with open(label_file, "r") as f:
+                    label_indices = [int(x) for x in f.read().strip().split(",") if x.strip()]
+            else:
+                # If not present, randomly select 1-2 indices (besides diagrams)
+                num_labels = min(2, max(1, random.randint(1, 2)))
+                # Only select from non-diagram frames
+                # We'll select after the first call, so for now, just pick 1-2 random indices
+                label_indices = random.sample(range(10), num_labels)  # fallback, will be overwritten below
+                # We'll update this below after we know total frames
+            
+            # If this is the first frame, and label_file doesn't exist, create it with correct indices
+            if frame_index == 0 and not os.path.exists(label_file):
+                # Try to get total frames from environment (if set by caller), else fallback to 10
+                total_frames = int(os.environ.get("TOTAL_FRAMES", "10"))
+                # Find all diagram frames (simulate for now, as we don't have all sentences here)
+                # We'll just pick 1-2 random indices for now
+                num_labels = min(2, max(1, random.randint(1, 2)))
+                label_indices = random.sample(range(total_frames), num_labels)
+                with open(label_file, "w") as f:
+                    f.write(",".join(str(x) for x in label_indices))
+            
+            # Should this frame get a label?
+            add_label = (frame_index == 0) or is_diagram or (frame_index in label_indices)
+
+            # --- Prompt construction ---
+            # Detect if the sentence involves people
+            people_keywords = [
+                "person", "people", "man", "woman", "boy", "girl", "teacher", "student", "child", "children", "adult", "woman", "men", "women", "kid", "kids", "human", "face", "worker", "employee", "boss", "manager", "team", "group", "crowd", "audience", "speaker", "presenter", "doctor", "nurse", "patient", "customer", "client", "user", "friend", "family", "parent", "father", "mother", "son", "daughter", "brother", "sister"
+            ]
+            involves_people = any(kw in sentence.lower() for kw in people_keywords)
+
+            if involves_people:
+                people_detail_instruction = (
+                    " in a clean, detailed, hand-drawn whiteboard sketch style, cartoon style. "
+                    "Show the full body, with clear facial features, expressive faces, detailed clothing, and realistic body posture. "
+                    "Minimal, black lines on white background. No color, no shading. Professional whiteboard animation style."
+                )
+            else:
+                people_detail_instruction = ""
+
+            cartoon_face_instruction = " with cartoon-style faces (not realistic, but friendly and expressive)" if involves_people else ""
+            full_body_instruction = " Show the full body of the person, including face, body, and figure, in a hand-drawn cartoon style." if involves_people else ""
+
+            if add_label:
+                # Use a minimal heading/label
+                heading = sentence[:40].strip().rstrip('.!?')
+                label = heading.split(":")[-1].strip() if ":" in heading else heading
+                prompt = (
+                    f"A clean, hand-drawn whiteboard sketch of: {sentence}{cartoon_face_instruction}{full_body_instruction}{people_detail_instruction}. "
+                    f"Add a minimal heading or label at the very top margin, outside the main drawing area, in a small font: '{label}'. "
+                    f"Ensure the main illustration is centered and does not overlap with the text. "
+                    f"Minimal, black lines, white background."
+                )
+            else:
+                base_prompt = self._create_sketch_prompt(sentence)
+                # Insert cartoon face, full body, and detail instructions before the style requirements if needed
+                if involves_people:
+                    # Try to insert after the first line (the concept description)
+                    lines = base_prompt.split("\n")
+                    if len(lines) > 1:
+                        lines[0] = lines[0] + cartoon_face_instruction + full_body_instruction + people_detail_instruction
+                        prompt = "\n".join(lines)
+                    else:
+                        prompt = base_prompt + cartoon_face_instruction + full_body_instruction + people_detail_instruction
+                else:
+                    prompt = base_prompt
+
             print(f"[ImageService] Image prompt: {prompt}")
             
             # Generate image using DALL-E 2 (gpt-image-1)
             response = self.client.images.generate(
                 model=self.image_model,
                 prompt=prompt,
-                size="1024x1024",
+                size="1536x1024",
+                quality="medium",
                 n=1,
             )
             print(f"[ImageService] DALL-E API raw response for frame {frame_index}: {response}")
