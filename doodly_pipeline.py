@@ -2,6 +2,10 @@ import os
 import subprocess
 from manim import *
 from moviepy.editor import concatenate_videoclips, AudioFileClip, VideoFileClip
+import glob
+import shutil
+from svgpathtools import svg2paths
+import numpy as np
 
 # --- CONFIG ---
 IMAGES_DIR = 'outputs'
@@ -25,26 +29,47 @@ def convert_pngs_to_svgs(images_dir):
     return svg_paths
 
 # --- 2. Animate SVGs with Manim ---
-class DrawSVG(Scene):
-    def __init__(self, svg_path, run_time=2, **kwargs):
-        self.svg_path = svg_path
-        self.run_time = run_time
-        super().__init__(**kwargs)
-    def construct(self):
-        svg = SVGMobject(self.svg_path, fill_opacity=0, stroke_width=2)
-        self.play(Create(svg), run_time=self.run_time)
-        self.wait(0.5)
-
 def animate_svgs(svg_paths, run_time_per_image):
     video_paths = []
     for i, svg_path in enumerate(svg_paths):
-        manim_script = f"from manim import *\nclass DrawSVG(Scene):\n    def construct(self):\n        svg = SVGMobject('{svg_path}', fill_opacity=0, stroke_width=2)\n        self.play(Create(svg), run_time={run_time_per_image})\n        self.wait(0.5)"
+        manim_script = f"""
+from manim import *
+from svgpathtools import svg2paths
+import numpy as np
+
+class DrawSVGWithHand(Scene):
+    def construct(self):
+        self.camera.background_color = WHITE
+        svg_path = '{svg_path}'
+        svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2)
+        svg.set_color(BLACK)
+        self.add(svg)
+        paths, _ = svg2paths(svg_path)
+        if not paths:
+            return
+        path = paths[0]
+        n_points = 100
+        points = [path.point(t) for t in np.linspace(0, 1, n_points)]
+        points = [(p.real, p.imag, 0) for p in points]
+        hand = ImageMobject('hand.png').scale(0.2)
+        hand.move_to(points[0])
+        self.add(hand)
+        def update_hand(mob, alpha):
+            idx = int(alpha * (n_points - 1))
+            mob.move_to(points[idx])
+        self.play(
+            Create(svg),
+            UpdateFromAlphaFunc(hand, update_hand),
+            run_time={run_time_per_image}
+        )
+        self.wait(0.5)
+"""
         script_path = f"draw_svg_{i}.py"
         with open(script_path, 'w') as f:
             f.write(manim_script)
         out_name = f"svg_anim_{i}.mp4"
         subprocess.run([
-            'manim', '-pql', script_path, 'DrawSVG',
+            'manim', '-ql', '--disable_caching', script_path, 'DrawSVGWithHand',
             '-o', out_name
         ], check=True)
         # Try to find the output video
@@ -88,6 +113,16 @@ def main():
     print('Merging videos and adding audio...')
     merge_videos_and_audio(video_paths, AUDIO_PATH, OUTPUT_VIDEO)
     print(f'Final Doodly-style video saved to {OUTPUT_VIDEO}')
+    # Cleanup: delete all PNG, PBM, SVG files in outputs/ and media/videos directory
+    for ext in ('*.png', '*.pbm', '*.svg'):
+        for f in glob.glob(os.path.join(IMAGES_DIR, ext)):
+            try:
+                os.remove(f)
+            except Exception as e:
+                print(f'Warning: Could not delete {f}: {e}')
+    if os.path.exists('media/videos'):
+        shutil.rmtree('media/videos')
+    print('Cleanup complete: all images and intermediate media files deleted.')
 
 if __name__ == '__main__':
     main() 

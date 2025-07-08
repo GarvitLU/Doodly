@@ -6,7 +6,7 @@ import numpy as np
 class DrawSVGWithHand(Scene):
     def construct(self):
         self.camera.background_color = WHITE
-        svg_path = 'outputs/image_a82330ba-81d5-460d-903a-df7ca8770282_2.svg'
+        svg_path = 'outputs/image_a82330ba-81d5-460d-903a-df7ca8770282_8.svg'
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2, color=BLACK)
         self.add(svg)
         paths, _ = svg2paths(svg_path)

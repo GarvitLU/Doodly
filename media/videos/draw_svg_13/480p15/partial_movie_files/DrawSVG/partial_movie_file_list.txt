@@ -1,3 +1,0 @@
-# This file is used internally by FFMPEG.
-file 'file:/Users/garvit/Desktop/LU/lisa ai/23 Sketch Animation/media/videos/draw_svg_13/480p15/partial_movie_files/DrawSVG/1185818338_2329685998_223132457.mp4'
-file 'file:/Users/garvit/Desktop/LU/lisa ai/23 Sketch Animation/media/videos/draw_svg_13/480p15/partial_movie_files/DrawSVG/624642324_3394500337_1443286655.mp4'
