@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whiteboard Animation Video Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], select, input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .progress {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .download-link {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .download-link a {
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .download-link a:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Whiteboard Animation Video Generator</h1>
+        
+        <form id="videoForm">
+            <div class="form-group">
+                <label for="topic">Topic or Script:</label>
+                <input type="text" id="topic" name="topic" placeholder="e.g., How photosynthesis works" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="style">Video Style:</label>
+                <select id="style" name="style">
+                    <option value="educational">Educational</option>
+                    <option value="technical">Technical</option>
+                    <option value="business">Business</option>
+                    <option value="creative">Creative</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="duration">Duration per Frame (seconds):</label>
+                <input type="number" id="duration" name="duration" value="3.0" min="1" max="10" step="0.5">
+            </div>
+            
+            <div class="form-group">
+                <label>Options:</label>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="backgroundMusic" name="backgroundMusic">
+                        <label for="backgroundMusic">Background Music</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="handAnimation" name="handAnimation">
+                        <label for="handAnimation">Hand Animation</label>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" id="generateBtn">Generate Video</button>
+        </form>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="progress" class="progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p id="progressText">Processing...</p>
+        </div>
+        
+        <div id="downloadLink" class="download-link">
+            <a href="#" id="downloadBtn" target="_blank">Download Video</a>
+        </div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let statusCheckInterval = null;
+
+        document.getElementById('videoForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                topic: formData.get('topic'),
+                style: formData.get('style'),
+                duration_per_frame: parseFloat(formData.get('duration')),
+                include_background_music: formData.get('backgroundMusic') === 'on',
+                include_hand_animation: formData.get('handAnimation') === 'on'
+            };
+            
+            // Show progress
+            showStatus('Starting video generation...', 'info');
+            showProgress();
+            document.getElementById('generateBtn').disabled = true;
+            
+            try {
+                // Submit generation request
+                const response = await fetch('/generate-video', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    currentJobId = result.job_id;
+                    showStatus('Video generation started! Checking status...', 'success');
+                    startStatusCheck();
+                } else {
+                    throw new Error(result.detail || 'Failed to start video generation');
+                }
+                
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                hideProgress();
+                document.getElementById('generateBtn').disabled = false;
+            }
+        });
+
+        function startStatusCheck() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            
+            statusCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/video-status/${currentJobId}`);
+                    const result = await response.json();
+                    
+                    if (result.status === 'completed') {
+                        clearInterval(statusCheckInterval);
+                        showStatus('Video generation completed!', 'success');
+                        hideProgress();
+                        document.getElementById('generateBtn').disabled = false;
+                        
+                        // Show download link
+                        document.getElementById('downloadBtn').href = result.video_url;
+                        document.getElementById('downloadLink').style.display = 'block';
+                        
+                    } else {
+                        updateProgress();
+                    }
+                    
+                } catch (error) {
+                    console.error('Status check error:', error);
+                }
+            }, 5000); // Check every 5 seconds
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+
+        function showProgress() {
+            document.getElementById('progress').style.display = 'block';
+            updateProgress();
+        }
+
+        function hideProgress() {
+            document.getElementById('progress').style.display = 'none';
+        }
+
+        function updateProgress() {
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            // Simulate progress (in real implementation, you'd get actual progress from the API)
+            const currentWidth = parseInt(progressFill.style.width) || 0;
+            const newWidth = Math.min(currentWidth + Math.random() * 10, 90);
+            progressFill.style.width = newWidth + '%';
+            
+            progressText.textContent = `Processing... ${Math.round(newWidth)}%`;
+        }
+    </script>
+</body>
+</html> 
