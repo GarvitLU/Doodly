@@ -44,7 +44,7 @@ class WhiteboardVideoCLI:
             
             # Step 1: Generate script
             print("\n📝 Step 1: Generating script...")
-            script = await self.script_service.generate_script(topic, style)
+            script = self.script_service.generate_script(topic, style)
             print(f"✅ Script generated ({len(script)} characters)")
             print(f"📄 Script preview: {script[:100]}...")
             
@@ -61,7 +61,7 @@ class WhiteboardVideoCLI:
             image_paths = []
             for i, sentence in enumerate(sentences):
                 print(f"   🎨 Generating image {i+1}/{len(sentences)}: {sentence[:50]}...")
-                image_path = await self.image_service.generate_sketch_image(sentence, job_id, i)
+                image_path = self.image_service.generate_sketch_image(sentence, job_id, i)
                 image_paths.append(image_path)
             
             print(f"✅ All images generated ({len(image_paths)} images)")
