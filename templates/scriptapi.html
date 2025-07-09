@@ -332,22 +332,33 @@
                             <div class="voice-options" id="voice-options">
                                 <div class="voice-option selected" data-voice-id="pNInz6obpgDQGcFmaJgB">
                                     <strong>Adam</strong><br>
-                                    <small>Professional Male</small>
+                                    <small>Professional Male</small><br>
+                                    <code style="font-size:12px;">pNInz6obpgDQGcFmaJgB</code>
                                 </div>
                                 <div class="voice-option" data-voice-id="21m00Tcm4TlvDq8ikWAM">
                                     <strong>Rachel</strong><br>
-                                    <small>Professional Female</small>
+                                    <small>Professional Female</small><br>
+                                    <code style="font-size:12px;">21m00Tcm4TlvDq8ikWAM</code>
                                 </div>
                                 <div class="voice-option" data-voice-id="AZnzlk1XvdvUeBnXmlld">
                                     <strong>Domi</strong><br>
-                                    <small>Casual Female</small>
+                                    <small>Casual Female</small><br>
+                                    <code style="font-size:12px;">AZnzlk1XvdvUeBnXmlld</code>
                                 </div>
                                 <div class="voice-option" data-voice-id="EXAVITQu4vr4xnSDxMaL">
                                     <strong>Bella</strong><br>
-                                    <small>Friendly Female</small>
+                                    <small>Friendly Female</small><br>
+                                    <code style="font-size:12px;">EXAVITQu4vr4xnSDxMaL</code>
                                 </div>
                             </div>
                             <input type="hidden" id="voice-id" name="voice-id" value="pNInz6obpgDQGcFmaJgB">
+                            <div style="margin-top: 10px;">
+                                <label for="custom-voice-id" style="font-size:13px;">Or enter a custom Voice ID:</label>
+                                <input type="text" id="custom-voice-id" placeholder="Paste custom Voice ID here" style="width:100%;margin-top:5px;">
+                            </div>
+                            <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                                💡 Voice IDs are shown for easy copy-paste and API use.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -384,7 +395,13 @@
                 document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
                 this.classList.add('selected');
                 document.getElementById('voice-id').value = this.dataset.voiceId;
+                document.getElementById('custom-voice-id').value = '';
             });
+        });
+        // When the custom input changes, clear the selected preset and set the hidden value
+        document.getElementById('custom-voice-id').addEventListener('input', function() {
+            document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+            document.getElementById('voice-id').value = this.value.trim();
         });
         
         // Form submission
