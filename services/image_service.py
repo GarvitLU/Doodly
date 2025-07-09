@@ -67,32 +67,37 @@ class ImageService:
             else:
                 people_detail_instruction = ""
 
+            # New: Add explicit style instructions for single-outline, no double lines, no repeated text
+            clean_line_instruction = (
+                " Use only single, clean, bold outlines for all shapes and text. "
+                "No double lines, no shading, no repeated or shadowed text. "
+                "Add a single, clear heading at the top in a simple, bold font. "
+                "Minimal, black lines on white background."
+            )
+
             cartoon_face_instruction = " with cartoon-style faces (not realistic, but friendly and expressive)" if involves_people else ""
             full_body_instruction = " Show the full body of the person, including face, body, and figure, in a hand-drawn cartoon style." if involves_people else ""
 
             if add_label:
-                # Use a minimal heading/label
                 heading = sentence[:40].strip().rstrip('.!?')
                 label = heading.split(":")[-1].strip() if ":" in heading else heading
                 prompt = (
-                    f"A clean, hand-drawn whiteboard sketch of: {sentence}{cartoon_face_instruction}{full_body_instruction}{people_detail_instruction}. "
+                    f"A clean, hand-drawn whiteboard sketch of: {sentence}{cartoon_face_instruction}{full_body_instruction}{people_detail_instruction}{clean_line_instruction}. "
                     f"Add a minimal heading or label at the very top margin, outside the main drawing area, in a small font: '{label}'. "
                     f"Ensure the main illustration is centered and does not overlap with the text. "
                     f"Minimal, black lines, white background."
                 )
             else:
                 base_prompt = self._create_sketch_prompt(sentence)
-                # Insert cartoon face, full body, and detail instructions before the style requirements if needed
                 if involves_people:
-                    # Try to insert after the first line (the concept description)
                     lines = base_prompt.split("\n")
                     if len(lines) > 1:
-                        lines[0] = lines[0] + cartoon_face_instruction + full_body_instruction + people_detail_instruction
+                        lines[0] = lines[0] + cartoon_face_instruction + full_body_instruction + people_detail_instruction + clean_line_instruction
                         prompt = "\n".join(lines)
                     else:
-                        prompt = base_prompt + cartoon_face_instruction + full_body_instruction + people_detail_instruction
+                        prompt = base_prompt + cartoon_face_instruction + full_body_instruction + people_detail_instruction + clean_line_instruction
                 else:
-                    prompt = base_prompt
+                    prompt = base_prompt + clean_line_instruction
 
             print(f"[ImageService] Image prompt: {prompt}")
             
