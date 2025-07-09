@@ -69,24 +69,7 @@ class DrawSVGWithHand(Scene):
         svg.set_color(BLACK)
         svg.scale(3.0)
         self.add(svg)
-        paths, _ = svg2paths(svg_path)
-        if not paths:
-            return
-        path = paths[0]
-        n_points = 100
-        points = [path.point(t) for t in np.linspace(0, 1, n_points)]
-        points = [(p.real, p.imag, 0) for p in points]
-        hand = ImageMobject('hand.png').scale(0.2)
-        hand.move_to(points[0])
-        self.add(hand)
-        def update_hand(mob, alpha):
-            idx = int(alpha * (n_points - 1))
-            mob.move_to(points[idx])
-        self.play(
-            Create(svg),
-            UpdateFromAlphaFunc(hand, update_hand),
-            run_time={duration}
-        )
+        self.play(Create(svg), run_time={duration})
         self.wait(0.5)
 """
     script_path = f"draw_svg_temp.py"

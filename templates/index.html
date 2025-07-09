@@ -8,6 +8,26 @@
         body { font-family: sans-serif; margin: 2em; }
         #output img, #output video { max-width: 400px; margin: 1em 0; display: block; }
         #video-list { margin-top: 2em; }
+        .download-btn {
+            background: #4CAF50;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .download-btn:hover {
+            background: #45a049;
+        }
+        .media-container {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -32,11 +52,28 @@
 
     <script>
         const videos = [];
+        
+        // Helper function to create download link
+        function createDownloadButton(url, filename, type) {
+            const btn = document.createElement('a');
+            btn.href = url;
+            btn.download = filename;
+            btn.className = 'download-btn';
+            btn.textContent = `Download ${type}`;
+            return btn;
+        }
+        
+        // Helper function to get filename from URL
+        function getFilenameFromUrl(url) {
+            return url.split('/').pop();
+        }
+        
         document.getElementById('gen-form').onsubmit = async function(e) {
             e.preventDefault();
             const prompt = document.getElementById('prompt').value;
             const duration = document.getElementById('duration').value;
             document.getElementById('output').innerHTML = 'Generating image...';
+            
             // 1. Generate image
             const imgRes = await fetch('/generate-image', {
                 method: 'POST',
@@ -44,7 +81,21 @@
                 body: JSON.stringify({prompt})
             });
             const imgData = await imgRes.json();
-            document.getElementById('output').innerHTML = `<b>Generated Image:</b><br><img src='${imgData.image_url}'>`;
+            
+            // Create image container with download option
+            const imageContainer = document.createElement('div');
+            imageContainer.className = 'media-container';
+            imageContainer.innerHTML = `
+                <b>Generated Image:</b><br>
+                <img src='${imgData.image_url}' alt="Generated image">
+                <br>
+            `;
+            const imageDownloadBtn = createDownloadButton(imgData.image_url, getFilenameFromUrl(imgData.image_url), 'Image');
+            imageContainer.appendChild(imageDownloadBtn);
+            
+            document.getElementById('output').innerHTML = '';
+            document.getElementById('output').appendChild(imageContainer);
+            
             // 2. Animate SVG
             document.getElementById('output').innerHTML += '<br>Animating SVG...';
             const animRes = await fetch('/animate-svg', {
@@ -53,13 +104,33 @@
                 body: JSON.stringify({image_url: imgData.image_url, duration: duration})
             });
             const animData = await animRes.json();
-            document.getElementById('output').innerHTML += `<br><b>Animated SVG Video:</b><br><video src='${animData.video_url}' controls></video>`;
+            
+            // Create video container with download option
+            const videoContainer = document.createElement('div');
+            videoContainer.className = 'media-container';
+            videoContainer.innerHTML = `
+                <b>Animated SVG Video:</b><br>
+                <video src='${animData.video_url}' controls></video>
+                <br>
+            `;
+            const videoDownloadBtn = createDownloadButton(animData.video_url, getFilenameFromUrl(animData.video_url), 'Video');
+            videoContainer.appendChild(videoDownloadBtn);
+            
+            document.getElementById('output').appendChild(videoContainer);
+            
             // Add to video list for possible concatenation
             videos.push(animData.video_url);
             const li = document.createElement('li');
-            li.innerHTML = `<video src='${animData.video_url}' controls style='max-width:200px;'></video> <span>${prompt}</span>`;
+            li.className = 'media-container';
+            li.innerHTML = `
+                <video src='${animData.video_url}' controls style='max-width:200px;'></video>
+                <span>${prompt}</span><br>
+            `;
+            const listVideoDownloadBtn = createDownloadButton(animData.video_url, getFilenameFromUrl(animData.video_url), 'Video');
+            li.appendChild(listVideoDownloadBtn);
             document.getElementById('videos').appendChild(li);
         };
+        
         document.getElementById('merge-all-btn').onclick = async function() {
             document.getElementById('final-video').innerHTML = 'Merging all SVG videos...';
             // Fetch the list of SVG animation videos from the backend
@@ -76,7 +147,20 @@
                 body: JSON.stringify({video_urls: videoUrls})
             });
             const data = await res.json();
-            document.getElementById('final-video').innerHTML = `<b>Merged SVG Video:</b><br><video src='${data.final_video_url}' controls></video>`;
+            
+            // Create final video container with download option
+            const finalContainer = document.createElement('div');
+            finalContainer.className = 'media-container';
+            finalContainer.innerHTML = `
+                <b>Merged SVG Video:</b><br>
+                <video src='${data.final_video_url}' controls></video>
+                <br>
+            `;
+            const finalDownloadBtn = createDownloadButton(data.final_video_url, getFilenameFromUrl(data.final_video_url), 'Final Video');
+            finalContainer.appendChild(finalDownloadBtn);
+            
+            document.getElementById('final-video').innerHTML = '';
+            document.getElementById('final-video').appendChild(finalContainer);
         };
     </script>
 </body>

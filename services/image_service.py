@@ -19,85 +19,24 @@ class ImageService:
         try:
             print(f"[ImageService] Job ID: {job_id} | Generating image for frame {frame_index}: {sentence[:50]}...")
 
-            # --- Label/heading logic ---
-            # Detect if this is a diagram or label-worthy image
-            diagram_keywords = ["diagram", "flowchart", "process", "structure", "cycle", "chart", "graph", "map", "step", "labeled"]
-            is_diagram = any(kw in sentence.lower() for kw in diagram_keywords)
-            
-            # Use a temp file to store which frames get labels for this job_id
-            label_file = f"outputs/.label_indices_{job_id}.txt"
-            if os.path.exists(label_file):
-                with open(label_file, "r") as f:
-                    label_indices = [int(x) for x in f.read().strip().split(",") if x.strip()]
-            else:
-                # If not present, randomly select 1-2 indices (besides diagrams)
-                num_labels = min(2, max(1, random.randint(1, 2)))
-                # Only select from non-diagram frames
-                # We'll select after the first call, so for now, just pick 1-2 random indices
-                label_indices = random.sample(range(10), num_labels)  # fallback, will be overwritten below
-                # We'll update this below after we know total frames
-            
-            # If this is the first frame, and label_file doesn't exist, create it with correct indices
-            if frame_index == 0 and not os.path.exists(label_file):
-                # Try to get total frames from environment (if set by caller), else fallback to 10
-                total_frames = int(os.environ.get("TOTAL_FRAMES", "10"))
-                # Find all diagram frames (simulate for now, as we don't have all sentences here)
-                # We'll just pick 1-2 random indices for now
-                num_labels = min(2, max(1, random.randint(1, 2)))
-                label_indices = random.sample(range(total_frames), num_labels)
-                with open(label_file, "w") as f:
-                    f.write(",".join(str(x) for x in label_indices))
-            
-            # Should this frame get a label?
-            add_label = (frame_index == 0) or is_diagram or (frame_index in label_indices)
-
-            # --- Prompt construction ---
             # Detect if the sentence involves people
             people_keywords = [
                 "person", "people", "man", "woman", "boy", "girl", "teacher", "student", "child", "children", "adult", "woman", "men", "women", "kid", "kids", "human", "face", "worker", "employee", "boss", "manager", "team", "group", "crowd", "audience", "speaker", "presenter", "doctor", "nurse", "patient", "customer", "client", "user", "friend", "family", "parent", "father", "mother", "son", "daughter", "brother", "sister"
             ]
             involves_people = any(kw in sentence.lower() for kw in people_keywords)
 
+            # Generate the base prompt without any text elements
+            base_prompt = self._create_sketch_prompt(sentence)
+            
             if involves_people:
                 people_detail_instruction = (
-                    " in a clean, detailed, hand-drawn whiteboard sketch style, cartoon style. "
-                    "Show the full body, with clear facial features, expressive faces, detailed clothing, and realistic body posture. "
-                    "Minimal, black lines on white background. No color, no shading. Professional whiteboard animation style."
+                    " Show full body with clear facial features, expressive cartoon-style faces, "
+                    "detailed clothing, and realistic body posture. Clean, hand-drawn style with "
+                    "friendly and approachable character design."
                 )
+                prompt = base_prompt + people_detail_instruction
             else:
-                people_detail_instruction = ""
-
-            # New: Add explicit style instructions for single-outline, no double lines, no repeated text
-            clean_line_instruction = (
-                " Use only single, clean, bold outlines for all shapes and text. "
-                "No double lines, no shading, no repeated or shadowed text. "
-                "Add a single, clear heading at the top in a simple, bold font. "
-                "Minimal, black lines on white background."
-            )
-
-            cartoon_face_instruction = " with cartoon-style faces (not realistic, but friendly and expressive)" if involves_people else ""
-            full_body_instruction = " Show the full body of the person, including face, body, and figure, in a hand-drawn cartoon style." if involves_people else ""
-
-            if add_label:
-                heading = sentence[:40].strip().rstrip('.!?')
-                label = heading.split(":")[-1].strip() if ":" in heading else heading
-                prompt = (
-                    f"A clean, hand-drawn whiteboard sketch of: {sentence}{cartoon_face_instruction}{full_body_instruction}{people_detail_instruction}{clean_line_instruction}. "
-                    f"Add a minimal heading or label at the very top margin, outside the main drawing area, in a small font: '{label}'. "
-                    f"Ensure the main illustration is centered and does not overlap with the text. "
-                    f"Minimal, black lines, white background."
-                )
-            else:
-                base_prompt = self._create_sketch_prompt(sentence)
-                if involves_people:
-                    lines = base_prompt.split("\n")
-                    if len(lines) > 1:
-                        lines[0] = lines[0] + cartoon_face_instruction + full_body_instruction + people_detail_instruction + clean_line_instruction
-                        prompt = "\n".join(lines)
-                    else:
-                        prompt = base_prompt + cartoon_face_instruction + full_body_instruction + people_detail_instruction + clean_line_instruction
-                else:
-                    prompt = base_prompt + clean_line_instruction
+                prompt = base_prompt
 
             print(f"[ImageService] Image prompt: {prompt}")
             
@@ -162,21 +101,24 @@ class ImageService:
         clean_sentence = sentence.strip().rstrip('.!?')
         
         # Create a comprehensive prompt for whiteboard sketch style
-        prompt = f"""Create a whiteboard sketch illustration of: {clean_sentence}
+        prompt = f"""A clean, hand-drawn whiteboard sketch illustration of: {clean_sentence}
 
 Style requirements:
-- Hand-drawn whiteboard sketch style
-- Clean, simple, educational illustration
-- Use only black lines on white background
-- No text, words, or letters in the image
-- Minimalist and clear visual representation
-- Professional educational diagram style
-- Focus on the main concept or idea
-- Use simple shapes and lines like a real whiteboard drawing
-- Whiteboard or chalkboard background
-- Sketchy, hand-drawn appearance
-
-The illustration should clearly represent the concept described in the sentence without any text overlay."""
+- Professional whiteboard sketch style, as if drawn by hand with a black marker
+- Single, bold, clean outlines only - no double lines, no shading, no fills
+- Pure black lines on clean white background
+- Simple, clear, educational illustration style
+- Minimalist design focusing on essential visual elements
+- No text, words, letters, numbers, or labels anywhere in the image
+- No speech bubbles, captions, or written content
+- Vector-style illustration suitable for line art conversion
+- Clean geometric shapes and smooth curves
+- Professional educational diagram quality
+- Avoid complex textures or detailed shading
+- Focus on clear, recognizable shapes and forms
+- Draw only one person, with one left and one right hand, in a natural pose
+- Do not draw extra hands, fingers, or repeated body parts
+- No duplicate limbs, no extra fingers, no repeated objects"""
 
         return prompt
     
