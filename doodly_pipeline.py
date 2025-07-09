@@ -8,6 +8,8 @@ from svgpathtools import svg2paths
 import numpy as np
 import cv2
 import svgwrite
+import xml.etree.ElementTree as ET
+import json
 
 # --- CONFIG ---
 IMAGES_DIR = 'outputs'
@@ -19,8 +21,20 @@ RUN_TIME_PER_IMAGE = 2  # seconds per image animation
 def png_to_svg(png_path, output_dir=None):
     pbm_path = png_path.replace('.png', '.pbm')
     svg_path = png_path.replace('.png', '.svg')
+    # Use ImageMagick to threshold and Potrace for clean vector lines
     subprocess.run(['convert', png_path, '-threshold', '50%', pbm_path], check=True)
-    subprocess.run(['potrace', pbm_path, '-s', '-o', svg_path], check=True)
+    # Potrace options: -t 0 (sharp threshold), -a 1 (smooth curves), --flat (no curve optimization), --opaque (no transparency)
+    subprocess.run(['potrace', pbm_path, '-s', '-o', svg_path, '-t', '0', '-a', '1', '--flat', '--opaque'], check=True)
+    # Post-process SVG: remove fills, keep only stroke, set stroke-width=3
+    import xml.etree.ElementTree as ET
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+    for elem in root.iter():
+        if 'fill' in elem.attrib:
+            elem.attrib['fill'] = 'none'
+        elem.attrib['stroke'] = 'black'
+        elem.attrib['stroke-width'] = '3'
+    tree.write(svg_path)
     if output_dir:
         new_svg_path = os.path.join(output_dir, os.path.basename(svg_path))
         os.rename(svg_path, new_svg_path)
@@ -53,6 +67,23 @@ def png_to_color_svg(png_path, output_dir=None, k_colors=8, min_area=100):
         os.rename(svg_path, new_svg_path)
         return new_svg_path
     return svg_path
+
+# --- SVG Parsing for Word-Level Animation ---
+def parse_svg_elements(svg_path):
+    """
+    Parse SVG and return a list of drawable sub-elements (paths/groups) for word-level animation.
+    Returns a list of element IDs or path data.
+    """
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+    ns = {'svg': 'http://www.w3.org/2000/svg'}
+    elements = []
+    for elem in root.findall('.//svg:path', ns):
+        elem_id = elem.get('id')
+        path_data = elem.get('d')
+        elements.append({'id': elem_id, 'd': path_data})
+    # Optionally add groups or other shapes
+    return elements
 
 # --- 2. Animate SVGs with Manim ---
 def animate_svg(svg_path, duration, out_name, output_dir=None, heading=None):
@@ -93,6 +124,41 @@ class DrawSVGWithHand(Scene):
         return new_video_path
     return video_path
 
+def generate_manim_script_word_sync(svg_path, word_svg_mapping, out_name, audio_path=None, heading=None):
+    """
+    Generate a Manim script that animates SVG sub-elements in sync with word timings.
+    Each SVG element is drawn in sync with its word's start/end time.
+    """
+    mapping_json = json.dumps(word_svg_mapping)
+    manim_script = f"""
+from manim import *
+import json
+from svgpathtools import svg2paths
+import numpy as np
+
+class DrawSVGWordSync(Scene):
+    def construct(self):
+        self.camera.background_color = WHITE
+        {'heading = Text("' + heading.replace('"', '\"') + '", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\n        self.play(Write(heading), run_time=2)' if heading else ''}
+        svg_path = '{svg_path}'
+        mapping = json.loads('''{mapping_json}''')
+        svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2)
+        svg.set_color(BLACK)
+        svg.scale(3.0)
+        self.add(svg)
+        for item in mapping:
+            elem_id = item['svg_element']['id']
+            if elem_id:
+                sub_svg = [el for el in svg.submobjects if hasattr(el, 'id') and el.id == elem_id]
+                if sub_svg:
+                    self.play(Create(sub_svg[0]), run_time=item['end']-item['start'])
+        self.wait(0.5)
+"""
+    script_path = f"draw_svg_temp.py"
+    with open(script_path, 'w') as f:
+        f.write(manim_script)
+    return script_path
+
 # --- 3. Concatenate Videos and Add Audio ---
 def concatenate_videos(video_paths, output_path):
     clips = [VideoFileClip(v) for v in video_paths]
@@ -101,6 +167,31 @@ def concatenate_videos(video_paths, output_path):
     for c in clips:
         c.close()
     return output_path
+
+def map_words_to_svg_elements(words, svg_elements):
+    """
+    Map each word to a corresponding SVG element for animation.
+    For now, assign words to elements in order (1:1 mapping, or repeat if more words than elements).
+    Returns a list of dicts: {word, start, end, svg_element}
+    """
+    mapping = []
+    n = min(len(words), len(svg_elements))
+    for i in range(n):
+        mapping.append({
+            'word': words[i]['word'],
+            'start': words[i]['start'],
+            'end': words[i]['end'],
+            'svg_element': svg_elements[i]
+        })
+    # If more words than elements, repeat last element
+    for i in range(n, len(words)):
+        mapping.append({
+            'word': words[i]['word'],
+            'start': words[i]['start'],
+            'end': words[i]['end'],
+            'svg_element': svg_elements[-1]
+        })
+    return mapping
 
 # --- MAIN PIPELINE ---
 def main():

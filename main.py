@@ -124,7 +124,7 @@ async def batch_animate_and_merge(req: BatchAnimateAndMergeRequest):
 @app.post("/generate-script-video")
 async def generate_script_video(req: ScriptVideoRequest):
     """
-    Generate a complete video from script with customizable parameters
+    Generate a complete video from script with customizable parameters and per-sentence audio sync
     """
     try:
         job_id = str(uuid.uuid4())
@@ -149,43 +149,38 @@ async def generate_script_video(req: ScriptVideoRequest):
             video_generator.output_width = 1024
             video_generator.output_height = 1024
         
-        # Step 1: Generate audio from script
-        print("🎵 Step 1: Generating audio...")
-        audio_path = await audio_service.generate_audio(req.script, job_id)
-        print(f"✅ Audio generated: {audio_path}")
-        
-        # Step 2: Split script into sentences and generate images
-        print("🖼️ Step 2: Generating images...")
+        # Step 1: Split script into sentences
+        print("🖼️ Step 1: Splitting script into sentences...")
         sentences = script_service.split_script_into_sentences(req.script)
         print(f"📊 Found {len(sentences)} sentences to illustrate")
         
+        # Step 2: Generate audio for each sentence and get durations
+        print("🎵 Step 2: Generating audio per sentence...")
+        audio_segments = await audio_service.generate_audio_per_sentence(sentences, job_id)
+        print(f"✅ Audio segments generated: {len(audio_segments)}")
+        
+        # Step 3: Generate images for each sentence
+        print("🖼️ Step 3: Generating images...")
         image_paths = []
-        for i, sentence in enumerate(sentences):
-            print(f"   🎨 Generating image {i+1}/{len(sentences)}: {sentence[:50]}...")
-            # Generate image with custom quality
+        for i, seg in enumerate(audio_segments):
+            print(f"   🎨 Generating image {i+1}/{len(audio_segments)}: {seg['sentence'][:50]}...")
             image_path = image_service.generate_sketch_image_with_quality(
-                sentence, job_id, i, req.image_quality, image_size
+                seg['sentence'], job_id, i, req.image_quality, image_size
             )
             image_paths.append(image_path)
-        
         print(f"✅ All images generated ({len(image_paths)} images)")
         
-        # Step 3: Convert images to SVGs and animate them
-        print("🎬 Step 3: Converting to SVGs and animating...")
+        # Step 4: Convert images to SVGs and animate them with per-sentence duration
+        print("🎬 Step 4: Converting to SVGs and animating with per-sentence duration...")
+        from doodly_pipeline import png_to_svg, animate_svg, concatenate_videos
         svg_video_paths = []
-        for i, image_path in enumerate(image_paths):
-            # Convert PNG to SVG
+        for i, (image_path, seg) in enumerate(zip(image_paths, audio_segments)):
             svg_path = png_to_svg(image_path)
-            
-            # Animate SVG
             out_name = f"svg_anim_{job_id}_{i}.mp4"
-            video_path = animate_svg(svg_path, 3.0, out_name)  # 3 seconds per frame
-            
-            # Move to apiOutputs
+            video_path = animate_svg(svg_path, seg['duration'], out_name)
             new_video_path = os.path.join(API_OUTPUTS_DIR, out_name)
             os.rename(video_path, new_video_path)
             svg_video_paths.append(new_video_path)
-            
             # Cleanup SVG and PBM files
             try:
                 if os.path.exists(svg_path):
@@ -196,28 +191,45 @@ async def generate_script_video(req: ScriptVideoRequest):
             except Exception as e:
                 print(f"Warning: Could not delete SVG/PBM: {e}")
         
-        # Step 4: Concatenate all SVG videos
-        print("🎬 Step 4: Concatenating videos...")
+        # Step 5: Concatenate all SVG videos
+        print("🎬 Step 5: Concatenating videos...")
         final_video_path = os.path.join(MERGED_VIDEO_DIR, f"script_video_{job_id}.mp4")
         concatenate_videos(svg_video_paths, final_video_path)
         
-        # Step 5: Add audio to final video
-        print("🎵 Step 5: Adding audio to final video...")
-        from moviepy.editor import VideoFileClip, AudioFileClip
+        # Cleanup: Delete individual SVG video files
+        print("🧹 Cleaning up individual SVG video files...")
+        for video_path in svg_video_paths:
+            try:
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    print(f"   Deleted: {video_path}")
+            except Exception as e:
+                print(f"Warning: Could not delete {video_path}: {e}")
+        
+        # Step 6: Concatenate all audio segments
+        print("🎵 Step 6: Concatenating audio segments...")
+        from moviepy.editor import AudioFileClip, concatenate_audioclips, VideoFileClip
+        audio_clips = [AudioFileClip(seg['audio_path']) for seg in audio_segments]
+        final_audio = concatenate_audioclips(audio_clips)
+        final_audio_path = os.path.join("outputs", f"final_audio_{job_id}.mp3")
+        final_audio.write_audiofile(final_audio_path)
+        for clip in audio_clips:
+            clip.close()
+        
+        # Cleanup: Delete individual audio segments
+        print("🧹 Cleaning up individual audio segments...")
+        for seg in audio_segments:
+            try:
+                if os.path.exists(seg['audio_path']):
+                    os.remove(seg['audio_path'])
+                    print(f"   Deleted: {seg['audio_path']}")
+            except Exception as e:
+                print(f"Warning: Could not delete {seg['audio_path']}: {e}")
+        
+        # Step 7: Add audio to final video
+        print("🎵 Step 7: Adding audio to final video...")
         video_clip = VideoFileClip(final_video_path)
-        audio_clip = AudioFileClip(audio_path)
-        
-        # Match video duration to audio duration
-        if video_clip.duration < audio_clip.duration:
-            # Loop video if it's shorter than audio
-            loops_needed = int(audio_clip.duration / video_clip.duration) + 1
-            video_clip = video_clip.loop(loops_needed)
-        
-        # Trim video to match audio duration
-        final_video = video_clip.subclip(0, audio_clip.duration)
-        final_video = final_video.set_audio(audio_clip)
-        
-        # Save final video with audio
+        final_video = video_clip.set_audio(AudioFileClip(final_audio_path))
         final_output_path = os.path.join(MERGED_VIDEO_DIR, f"final_script_video_{job_id}.mp4")
         final_video.write_videofile(
             final_output_path,
@@ -228,11 +240,20 @@ async def generate_script_video(req: ScriptVideoRequest):
             verbose=False,
             logger=None
         )
-        
-        # Cleanup
         video_clip.close()
-        audio_clip.close()
         final_video.close()
+        
+        # Cleanup: Delete intermediate files
+        print("🧹 Cleaning up intermediate files...")
+        try:
+            if os.path.exists(final_video_path):
+                os.remove(final_video_path)
+                print(f"   Deleted intermediate video: {final_video_path}")
+            if os.path.exists(final_audio_path):
+                os.remove(final_audio_path)
+                print(f"   Deleted intermediate audio: {final_audio_path}")
+        except Exception as e:
+            print(f"Warning: Could not delete intermediate files: {e}")
         
         print(f"🎉 Script video generation completed!")
         return {
@@ -245,7 +266,7 @@ async def generate_script_video(req: ScriptVideoRequest):
             "sentences_count": len(sentences),
             "images_count": len(image_paths),
             "final_video_url": f"/apiOutputs/video/{os.path.basename(final_output_path)}",
-            "audio_path": audio_path
+            "audio_path": final_audio_path
         }
         
     except Exception as e:
