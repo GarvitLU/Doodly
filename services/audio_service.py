@@ -2,6 +2,7 @@ import os
 import asyncio
 from elevenlabs import generate, save, set_api_key, voices
 import aiofiles
+import whisper
 
 class AudioService:
     def __init__(self):
@@ -41,6 +42,29 @@ class AudioService:
             # Create a fallback audio file or raise the error
             raise Exception(f"Failed to generate audio: {str(e)}")
     
+    async def generate_audio_per_sentence(self, sentences: list, job_id: str) -> list:
+        """
+        Generate audio for each sentence and return a list of dicts with 'audio_path' and 'duration' for each.
+        """
+        from moviepy.editor import AudioFileClip
+        audio_segments = []
+        for i, sentence in enumerate(sentences):
+            audio = generate(
+                text=sentence,
+                voice=self.default_voice,
+                model=self.default_model
+            )
+            audio_path = f"outputs/audio_{job_id}_{i}.mp3"
+            save(audio, audio_path)
+            # Get duration
+            duration = AudioFileClip(audio_path).duration
+            audio_segments.append({
+                'audio_path': audio_path,
+                'duration': duration,
+                'sentence': sentence
+            })
+        return audio_segments
+    
     async def get_available_voices(self):
         """
         Get list of available voices from ElevenLabs
@@ -76,3 +100,19 @@ class AudioService:
         Set the model to use for audio generation
         """
         self.default_model = model_name 
+
+    def transcribe_audio(self, audio_path: str, model_size: str = "base") -> list:
+        """
+        Transcribe audio and return a list of words with their start/end timestamps using Whisper.
+        """
+        model = whisper.load_model(model_size)
+        result = model.transcribe(audio_path, word_timestamps=True, verbose=False)
+        words = []
+        for segment in result["segments"]:
+            for word in segment["words"]:
+                words.append({
+                    "word": word["word"],
+                    "start": word["start"],
+                    "end": word["end"]
+                })
+        return words 

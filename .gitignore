@@ -128,3 +128,20 @@ venv.bak/
 
 # Output files
 outputs/ 
+media/
+apiOutputs/
+node_modules/
+
+# Doodly Pipeline temporary files
+*.pbm
+*.svg
+draw_svg_temp.py
+temp_*.py
+
+# Generated images (keep source images but ignore generated ones)
+*_color.svg
+image_*.png
+svg_anim_*.mp4
+
+# Hand drawing assets (if generated)
+hand_*.png
