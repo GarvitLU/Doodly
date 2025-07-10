@@ -40,6 +40,7 @@ class ScriptVideoRequest(BaseModel):
     image_quality: str = "medium"  # low, medium, high
     voice_id: str = "pNInz6obpgDQGcFmaJgB"  # Default Adam voice
     video_type: str = "landscape"  # landscape, portrait
+    animation_duration: float = None  # Optional: duration for each image animation
 
 load_dotenv()
 print('DEBUG: OPENAI_API_KEY:', os.getenv('OPENAI_API_KEY'))
@@ -177,7 +178,9 @@ async def generate_script_video(req: ScriptVideoRequest):
         for i, (image_path, seg) in enumerate(zip(image_paths, audio_segments)):
             svg_path = png_to_svg(image_path)
             out_name = f"svg_anim_{job_id}_{i}.mp4"
-            video_path = animate_svg(svg_path, seg['duration'], out_name)
+            # Use animation_duration if provided, else use seg['duration']
+            duration = req.animation_duration if req.animation_duration is not None else seg['duration']
+            video_path = animate_svg(svg_path, duration, out_name)
             new_video_path = os.path.join(API_OUTPUTS_DIR, out_name)
             os.rename(video_path, new_video_path)
             svg_video_paths.append(new_video_path)

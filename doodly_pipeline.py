@@ -22,7 +22,7 @@ def png_to_svg(png_path, output_dir=None):
     pbm_path = png_path.replace('.png', '.pbm')
     svg_path = png_path.replace('.png', '.svg')
     # Use ImageMagick to threshold and Potrace for clean vector lines
-    subprocess.run(['convert', png_path, '-threshold', '50%', pbm_path], check=True)
+    subprocess.run(['magick', png_path, '-threshold', '50%', pbm_path], check=True)
     # Potrace options: -t 0 (sharp threshold), -a 1 (smooth curves), --flat (no curve optimization), --opaque (no transparency)
     subprocess.run(['potrace', pbm_path, '-s', '-o', svg_path, '-t', '0', '-a', '1', '--flat', '--opaque'], check=True)
     # Post-process SVG: remove fills, keep only stroke, set stroke-width=3
@@ -87,6 +87,8 @@ def parse_svg_elements(svg_path):
 
 # --- 2. Animate SVGs with Manim ---
 def animate_svg(svg_path, duration, out_name, output_dir=None, heading=None):
+    # Infer PNG path from SVG path
+    png_path = svg_path.replace('.svg', '.png')
     manim_script = f"""
 from manim import *
 from svgpathtools import svg2paths
@@ -96,11 +98,18 @@ class DrawSVGWithHand(Scene):
         self.camera.background_color = WHITE
         {'heading = Text("' + heading.replace('"', '\"') + '", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\n        self.play(Write(heading), run_time=2)' if heading else ''}
         svg_path = '{svg_path}'
-        svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2)
+        png_path = '{png_path}'
+        svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=3)
         svg.set_color(BLACK)
         svg.scale(3.0)
         self.add(svg)
         self.play(Create(svg), run_time={duration})
+        # Pop in the original image
+        img = ImageMobject(png_path)
+        img.width = svg.width
+        img.height = svg.height
+        img.move_to(svg.get_center())
+        self.play(FadeIn(img), FadeOut(svg), run_time=0.5)
         self.wait(0.5)
 """
     script_path = f"draw_svg_temp.py"
@@ -168,6 +177,34 @@ def concatenate_videos(video_paths, output_path):
         c.close()
     return output_path
 
+def merge_videos_and_audio(video_paths, audio_path, output_path):
+    """
+    Merge video clips and add audio to create final video
+    """
+    if not video_paths:
+        raise Exception("No video paths provided")
+    
+    # Load video clips
+    clips = [VideoFileClip(v) for v in video_paths]
+    
+    # Concatenate videos
+    final_video = concatenate_videoclips(clips, method="compose")
+    
+    # Add audio if provided
+    if audio_path and os.path.exists(audio_path):
+        audio_clip = AudioFileClip(audio_path)
+        final_video = final_video.set_audio(audio_clip)
+    
+    # Write final video
+    final_video.write_videofile(output_path, codec='libx264', audio_codec='aac', verbose=False, logger=None)
+    
+    # Clean up
+    final_video.close()
+    for clip in clips:
+        clip.close()
+    
+    return output_path
+
 def map_words_to_svg_elements(words, svg_elements):
     """
     Map each word to a corresponding SVG element for animation.
@@ -204,7 +241,11 @@ def main():
     print('Converting PNGs to SVGs...')
     svg_paths = [png_to_svg(os.path.join(IMAGES_DIR, fname)) for fname in sorted(os.listdir(IMAGES_DIR)) if fname.endswith('.png')]
     print('Animating SVGs with Manim...')
-    video_paths = [animate_svg(svg_path, RUN_TIME_PER_IMAGE, f"svg_anim_{i}.mp4") for i, svg_path in enumerate(svg_paths)]
+    video_paths = []
+    for i, svg_path in enumerate(svg_paths):
+        video_path = animate_svg(svg_path, RUN_TIME_PER_IMAGE, f"svg_anim_{i}.mp4")
+        video_paths.append(video_path)
+
     print('Video paths:', video_paths)
     if not video_paths:
         print('No video files were generated. Please check the Manim output for errors.')
@@ -212,6 +253,13 @@ def main():
     print('Merging videos and adding audio...')
     merge_videos_and_audio(video_paths, AUDIO_PATH, OUTPUT_VIDEO)
     print(f'Final Doodly-style video saved to {OUTPUT_VIDEO}')
+    # Cleanup: delete all temporary audio files (audio_*.mp3)
+    for f in glob.glob(os.path.join(IMAGES_DIR, "audio_*.mp3")):
+        try:
+            os.remove(f)
+        except Exception as e:
+            print(f'Warning: Could not delete {f}: {e}')
+    print('Cleanup complete: Deleted all temporary audio files.')
     # Cleanup: delete PBM and SVG files in outputs/ and media/videos directory, keep PNG images
     for ext in ('*.pbm', '*.svg'):
         for f in glob.glob(os.path.join(IMAGES_DIR, ext)):

@@ -360,6 +360,11 @@
                                 💡 Voice IDs are shown for easy copy-paste and API use.
                             </div>
                         </div>
+                        <div class="option-card">
+                            <h4>Animation Duration <span style="font-weight:normal; color:#888;">(optional)</span></h4>
+                            <input type="number" id="animation-duration" name="animation-duration" min="0.1" step="0.1" placeholder="e.g. 2.5 (seconds per image)">
+                            <div style="font-size:12px; color:#666; margin-top:5px;">Leave blank to sync with audio per sentence.</div>
+                        </div>
                     </div>
                 </div>
                 
@@ -452,7 +457,8 @@
                         script: script,
                         image_quality: imageQuality,
                         voice_id: voiceId,
-                        video_type: videoType
+                        video_type: videoType,
+                        animation_duration: document.getElementById('animation-duration').value ? parseFloat(document.getElementById('animation-duration').value) : undefined
                     })
                 });
                 
