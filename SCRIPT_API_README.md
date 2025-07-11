@@ -45,18 +45,13 @@ Open your browser and go to: **http://localhost:8000/scriptapi**
 **Response:**
 ```json
 {
-  "job_id": "uuid-string",
-  "status": "completed",
-  "script": "Your original script",
-  "image_quality": "medium",
-  "voice_id": "pNInz6obpgDQGcFmaJgB",
-  "video_type": "landscape",
-  "sentences_count": 5,
-  "images_count": 5,
-  "final_video_url": "/apiOutputs/video/final_script_video_uuid.mp4",
-  "audio_path": "outputs/audio_uuid.mp3"
+  "final_video_url": "https://lisa-research.s3.ap-south-1.amazonaws.com/videos/<job_id>/final_svg_video_final_video_with_audio_<job_id>.mp4"
 }
 ```
+
+> **Note:**
+> - The response now contains only the S3 URL of the final video. No other metadata (job_id, script, etc.) is included.
+> - For long scripts, video generation may take 1-3 minutes or more. Make sure your client (e.g., Postman) has a high enough timeout (e.g., 5 minutes).
 
 ## 🎨 Available Voices
 
