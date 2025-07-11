@@ -42,18 +42,15 @@ python cli.py
 - `POST /generate-script-video` — Full pipeline: script → images/audio → SVG animation → merged video
 - `GET /list-svg-videos` — List all SVG animation videos
 
+#### Example: /generate-script-video Request Body
+```json
+{
+  "script": "Education is the key to unlocking a brighter future. It empowers minds, builds confidence, and opens doors to endless possibilities. Every child deserves the chance to learn, grow, and achieve their dreams.",
+  "image_quality": "medium",  // "low", "medium", or "high"
+  "voice_id": "pNInz6obpgDQGcFmaJgB",  // ElevenLabs voice ID
+  "video_type": "landscape"   // "landscape" or "portrait"
+}
+```
+
 ## Modal Deployment
-- See `modal_app.py` for a Modal deployment example
-- All system and Python dependencies must be included in the Modal image
-- Set your OpenAI and ElevenLabs API keys as Modal secrets
-- Deploy with:
-  ```
-  modal deploy modal_app.py
-  ```
-
-## Notes
-- Outputs and intermediate files are stored in the `outputs/` and `apiOutputs/` directories
-- For production, consider using S3 or persistent storage for outputs
-
-## License
-MIT 
+- See `modal_app.py`
