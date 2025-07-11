@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,12 +10,12 @@ import uuid
 from services.image_service import ImageService
 import subprocess
 from doodly_pipeline import png_to_svg, animate_svg, concatenate_videos
-from dotenv import load_dotenv
 import glob
 from services.script_service import ScriptService
 from services.audio_service import AudioService
 from services.video_generator import VideoGenerator
 import asyncio
+from services.s3_service import S3Service
 
 API_OUTPUTS_DIR = 'apiOutputs'
 MERGED_VIDEO_DIR = os.path.join(API_OUTPUTS_DIR, 'video')
@@ -42,7 +45,6 @@ class ScriptVideoRequest(BaseModel):
     video_type: str = "landscape"  # landscape, portrait
     animation_duration: float = None  # Optional: duration for each image animation
 
-load_dotenv()
 print('DEBUG: OPENAI_API_KEY:', os.getenv('OPENAI_API_KEY'))
 
 @app.post("/generate-image")
@@ -125,7 +127,8 @@ async def batch_animate_and_merge(req: BatchAnimateAndMergeRequest):
 @app.post("/generate-script-video")
 async def generate_script_video(req: ScriptVideoRequest):
     """
-    Generate a complete video from script with customizable parameters and per-sentence audio sync
+    Generate a complete video from script with customizable parameters and per-sentence audio sync.
+    Upload the final video to S3 and return only the S3 URL.
     """
     try:
         job_id = str(uuid.uuid4())
@@ -136,6 +139,7 @@ async def generate_script_video(req: ScriptVideoRequest):
         audio_service = AudioService()
         image_service = ImageService()
         video_generator = VideoGenerator()
+        s3_service = S3Service()
         
         # Set custom voice ID
         audio_service.set_voice(req.voice_id)
@@ -241,7 +245,8 @@ async def generate_script_video(req: ScriptVideoRequest):
             temp_audiofile='temp-audio.m4a',
             remove_temp=True,
             verbose=False,
-            logger=None
+            logger=None,
+            fps=24
         )
         video_clip.close()
         final_video.close()
@@ -258,20 +263,15 @@ async def generate_script_video(req: ScriptVideoRequest):
         except Exception as e:
             print(f"Warning: Could not delete intermediate files: {e}")
         
-        print(f"🎉 Script video generation completed!")
-        return {
-            "job_id": job_id,
-            "status": "completed",
-            "script": req.script,
-            "image_quality": req.image_quality,
-            "voice_id": req.voice_id,
-            "video_type": req.video_type,
-            "sentences_count": len(sentences),
-            "images_count": len(image_paths),
-            "final_video_url": f"/apiOutputs/video/{os.path.basename(final_output_path)}",
-            "audio_path": final_audio_path
-        }
+        # Step 8: Upload final video to S3
+        s3_url = s3_service.upload_video(final_output_path, job_id, "final")
+        if os.path.exists(final_output_path):
+            os.remove(final_output_path)
         
+        print(f"🎉 Script video generation completed! S3 URL: {s3_url}")
+        return {
+            "final_video_url": s3_url
+        }
     except Exception as e:
         print(f"❌ Error during script video generation: {str(e)}")
         return {

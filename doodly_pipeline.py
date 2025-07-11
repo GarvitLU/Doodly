@@ -1,3 +1,4 @@
+# Force Modal to use the latest version - cache bust
 import os
 import subprocess
 from manim import *
@@ -22,7 +23,12 @@ def png_to_svg(png_path, output_dir=None):
     pbm_path = png_path.replace('.png', '.pbm')
     svg_path = png_path.replace('.png', '.svg')
     # Use ImageMagick to threshold and Potrace for clean vector lines
-    subprocess.run(['magick', png_path, '-threshold', '50%', pbm_path], check=True)
+    try:
+        # Try 'magick' command first (newer ImageMagick versions)
+        subprocess.run(['magick', png_path, '-threshold', '50%', pbm_path], check=True)
+    except FileNotFoundError:
+        # Fall back to 'convert' command (older ImageMagick versions)
+        subprocess.run(['convert', png_path, '-threshold', '50%', pbm_path], check=True)
     # Potrace options: -t 0 (sharp threshold), -a 1 (smooth curves), --flat (no curve optimization), --opaque (no transparency)
     subprocess.run(['potrace', pbm_path, '-s', '-o', svg_path, '-t', '0', '-a', '1', '--flat', '--opaque'], check=True)
     # Post-process SVG: remove fills, keep only stroke, set stroke-width=3
@@ -89,6 +95,11 @@ def parse_svg_elements(svg_path):
 def animate_svg(svg_path, duration, out_name, output_dir=None, heading=None):
     # Infer PNG path from SVG path
     png_path = svg_path.replace('.svg', '.png')
+    heading_code = ''
+    if heading:
+        escaped_heading = heading.replace('"', '\\"')
+        heading_code = f'heading = Text("{escaped_heading}", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\\n        self.play(Write(heading), run_time=2)'
+    
     manim_script = f"""
 from manim import *
 from svgpathtools import svg2paths
@@ -96,7 +107,7 @@ import numpy as np
 class DrawSVGWithHand(Scene):
     def construct(self):
         self.camera.background_color = WHITE
-        {'heading = Text("' + heading.replace('"', '\"') + '", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\n        self.play(Write(heading), run_time=2)' if heading else ''}
+        {heading_code}
         svg_path = '{svg_path}'
         png_path = '{png_path}'
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=3)
@@ -139,6 +150,11 @@ def generate_manim_script_word_sync(svg_path, word_svg_mapping, out_name, audio_
     Each SVG element is drawn in sync with its word's start/end time.
     """
     mapping_json = json.dumps(word_svg_mapping)
+    heading_code = ''
+    if heading:
+        escaped_heading = heading.replace('"', '\\"')
+        heading_code = f'heading = Text("{escaped_heading}", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\\n        self.play(Write(heading), run_time=2)'
+    
     manim_script = f"""
 from manim import *
 import json
@@ -148,7 +164,7 @@ import numpy as np
 class DrawSVGWordSync(Scene):
     def construct(self):
         self.camera.background_color = WHITE
-        {'heading = Text("' + heading.replace('"', '\"') + '", font="Arial", color=BLACK).scale(0.8).to_edge(UP)\n        self.play(Write(heading), run_time=2)' if heading else ''}
+        {heading_code}
         svg_path = '{svg_path}'
         mapping = json.loads('''{mapping_json}''')
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2)
@@ -170,6 +186,7 @@ class DrawSVGWordSync(Scene):
 
 # --- 3. Concatenate Videos and Add Audio ---
 def concatenate_videos(video_paths, output_path):
+    from moviepy.editor import VideoFileClip, concatenate_videoclips
     clips = [VideoFileClip(v) for v in video_paths]
     final = concatenate_videoclips(clips, method="compose")
     final.write_videofile(output_path, codec='libx264', audio=False)
@@ -181,6 +198,8 @@ def merge_videos_and_audio(video_paths, audio_path, output_path):
     """
     Merge video clips and add audio to create final video
     """
+    from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip
+    
     if not video_paths:
         raise Exception("No video paths provided")
     

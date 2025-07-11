@@ -14,6 +14,7 @@ class ImageService:
         try:
             self.s3_service = S3Service()
             self.use_s3 = True
+            print("[ImageService] S3 storage enabled")
         except Exception as e:
             print(f"[ImageService] S3 not available, using local storage: {e}")
             self.use_s3 = False
@@ -21,6 +22,7 @@ class ImageService:
     def generate_sketch_image(self, sentence: str, job_id: str, frame_index: int) -> str:
         """
         Generate a whiteboard sketch-style image focused on humans, emotional faces, and script-based context.
+        Returns S3 URL if S3 is available, otherwise local file path.
         """
         try:
             print(f"[ImageService] Job ID: {job_id} | Generating image for frame {frame_index}: {sentence[:50]}...")
@@ -58,27 +60,43 @@ class ImageService:
             image_url = getattr(image_data_obj, 'url', None)
             b64_json = getattr(image_data_obj, 'b64_json', None)
 
-            image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            # Create temporary local path
+            temp_image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            os.makedirs("outputs", exist_ok=True)
 
             if image_url:
-                self._download_and_save_image(image_url, image_path)
-                print(f"[ImageService] Image saved to {image_path}")
-                return image_path
+                self._download_and_save_image(image_url, temp_image_path)
+                print(f"[ImageService] Image saved to {temp_image_path}")
             elif b64_json:
                 image_data = base64.b64decode(b64_json)
                 image = Image.open(io.BytesIO(image_data))
-                image.save(image_path, "PNG")
-                print(f"[ImageService] Image saved to {image_path} from base64 data")
-                return image_path
+                image.save(temp_image_path, "PNG")
+                print(f"[ImageService] Image saved to {temp_image_path} from base64 data")
             else:
                 raise Exception("OpenAI API did not return a valid image URL or base64 image data.")
+            
+            # Upload to S3 if available
+            if self.use_s3:
+                try:
+                    s3_url = self.s3_service.upload_image(temp_image_path, job_id, frame_index)
+                    print(f"[ImageService] Image uploaded to S3: {s3_url}")
+                    # Clean up local file
+                    os.remove(temp_image_path)
+                    return s3_url
+                except Exception as e:
+                    print(f"[ImageService] Failed to upload to S3, keeping local file: {e}")
+                    return temp_image_path
+            else:
+                return temp_image_path
+                
         except Exception as e:
             print(f"[ImageService] Error generating image for frame {frame_index}: {str(e)}")
             raise Exception(f"Failed to generate image: {str(e)}")
 
     def generate_sketch_image_with_quality(self, sentence: str, job_id: str, frame_index: int, quality: str = "medium", size: str = "1536x1024") -> str:
         """
-        Generate a whiteboard sketch-style image with customizable quality and size
+        Generate a whiteboard sketch-style image with customizable quality and size.
+        Returns S3 URL if S3 is available, otherwise local file path.
         """
         try:
             print(f"[ImageService] Job ID: {job_id} | Generating image for frame {frame_index}: {sentence[:50]}...")
@@ -117,20 +135,35 @@ class ImageService:
             image_url = getattr(image_data_obj, 'url', None)
             b64_json = getattr(image_data_obj, 'b64_json', None)
 
-            image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            # Create temporary local path
+            temp_image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            os.makedirs("outputs", exist_ok=True)
 
             if image_url:
-                self._download_and_save_image(image_url, image_path)
-                print(f"[ImageService] Image saved to {image_path}")
-                return image_path
+                self._download_and_save_image(image_url, temp_image_path)
+                print(f"[ImageService] Image saved to {temp_image_path}")
             elif b64_json:
                 image_data = base64.b64decode(b64_json)
                 image = Image.open(io.BytesIO(image_data))
-                image.save(image_path, "PNG")
-                print(f"[ImageService] Image saved to {image_path} from base64 data")
-                return image_path
+                image.save(temp_image_path, "PNG")
+                print(f"[ImageService] Image saved to {temp_image_path} from base64 data")
             else:
                 raise Exception("OpenAI API did not return a valid image URL or base64 image data.")
+            
+            # Upload to S3 if available
+            if self.use_s3:
+                try:
+                    s3_url = self.s3_service.upload_image(temp_image_path, job_id, frame_index)
+                    print(f"[ImageService] Image uploaded to S3: {s3_url}")
+                    # Clean up local file
+                    os.remove(temp_image_path)
+                    return s3_url
+                except Exception as e:
+                    print(f"[ImageService] Failed to upload to S3, keeping local file: {e}")
+                    return temp_image_path
+            else:
+                return temp_image_path
+                
         except Exception as e:
             print(f"[ImageService] Error generating image for frame {frame_index}: {str(e)}")
             raise Exception(f"Failed to generate image: {str(e)}")
@@ -175,4 +208,4 @@ Requirements:
             image = Image.open(io.BytesIO(image_data))
             image.save(save_path, "PNG")
         else:
-            raise Exception(f"Failed to download image: HTTP {response.status_code}")
+            raise Exception(f"Failed to download image: HTTP {response.status_code}") 
