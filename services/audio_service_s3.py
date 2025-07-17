@@ -25,19 +25,20 @@ class AudioService:
             print(f"[AudioService] S3 not available, using local storage: {e}")
             self.use_s3 = False
     
-    async def generate_audio(self, script: str, job_id: str) -> str:
+    async def generate_audio(self, script: str, job_id: str, voice_id: str = None) -> str:
         """
         Generate audio from script using ElevenLabs API.
         Returns S3 URL if S3 is available, otherwise local file path.
         """
         try:
+            actual_voice = voice_id if voice_id else "ftDdhfYtmfGP0tFlBYA1"
             print(f"Generating audio for job {job_id}")
-            print(f"[AudioService] Using voice ID: {self.default_voice}")
+            print(f"[AudioService] Using voice ID: {actual_voice}")  # Debug print
             
             # Generate audio using ElevenLabs
             audio = generate(
                 text=script,
-                voice=self.default_voice,
+                voice=actual_voice,
                 model=self.default_model
             )
             
@@ -67,18 +68,19 @@ class AudioService:
             # Create a fallback audio file or raise the error
             raise Exception(f"Failed to generate audio: {str(e)}")
     
-    async def generate_audio_per_sentence(self, sentences: list, job_id: str) -> list:
+    async def generate_audio_per_sentence(self, sentences: list, job_id: str, voice_id: str = None) -> list:
         """
         Generate audio for each sentence and return a list of dicts with 'audio_path' and 'duration' for each.
         Returns S3 URLs if S3 is available, otherwise local file paths.
         """
         from moviepy.editor import AudioFileClip
         audio_segments = []
-        
+        actual_voice = voice_id if voice_id else "ftDdhfYtmfGP0tFlBYA1"
+        print(f"[AudioService] Actually using voice: {actual_voice}")  # Debug print
         for i, sentence in enumerate(sentences):
             audio = generate(
                 text=sentence,
-                voice=self.default_voice,
+                voice=actual_voice,
                 model=self.default_model
             )
             

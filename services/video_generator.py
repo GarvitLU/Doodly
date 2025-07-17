@@ -36,8 +36,9 @@ class VideoGenerator:
             if num_images == 0:
                 raise Exception("No images provided for video generation")
             
-            # Calculate frame duration based on audio length
+            # Calculate frame duration based on audio length for better sync
             frame_duration = total_duration / num_images
+            print(f"Audio duration: {total_duration:.2f}s, Images: {num_images}, Frame duration: {frame_duration:.2f}s")
             
             # Create video clips from images
             video_clips = []
@@ -50,14 +51,15 @@ class VideoGenerator:
                     # Resize image to fit video dimensions
                     image_clip = image_clip.resize((self.output_width, self.output_height))
                     
-                    # Add fade in/out effects
-                    image_clip = image_clip.fadein(0.5).fadeout(0.5)
+                    # Add subtle fade in/out effects (shorter for smoother transitions)
+                    image_clip = image_clip.fadein(0.3).fadeout(0.3)
                     
                     # Add Ken Burns effect (optional)
                     if include_hand_animation:
                         image_clip = self._add_ken_burns_effect(image_clip)
                     
                     video_clips.append(image_clip)
+                    print(f"Added frame {i+1}/{num_images} with duration {frame_duration:.2f}s")
                 else:
                     print(f"Warning: Image file not found: {image_path}")
             

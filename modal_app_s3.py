@@ -115,7 +115,7 @@ def create_fastapi_app():
         try:
             from services.script_service import ScriptService
             from services.audio_service_s3 import AudioService
-            from services.image_service_s3 import ImageService
+            from services.ideogram_image_service_s3 import IdeogramImageService
             from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips, concatenate_audioclips, VideoFileClip
             import requests
             import tempfile
@@ -126,7 +126,7 @@ def create_fastapi_app():
             # Initialize services
             script_service = ScriptService()
             audio_service = AudioService()
-            image_service = ImageService()
+            image_service = IdeogramImageService()
             
             # Set custom voice ID
             audio_service.set_voice(req.voice_id)
@@ -143,7 +143,7 @@ def create_fastapi_app():
             # Step 2: Generate audio for each sentence
             audio_segments = []
             for i, sentence in enumerate(sentences):
-                audio = await audio_service.generate_audio_per_sentence([sentence], f"{job_id}_{i}")
+                audio = await audio_service.generate_audio_per_sentence([sentence], f"{job_id}_{i}", req.voice_id)
                 audio_segments.extend(audio)
             
             # Step 3: Generate images for each sentence
@@ -275,7 +275,7 @@ def create_fastapi_app():
         try:
             from services.script_service import ScriptService
             from services.audio_service_s3 import AudioService
-            from services.image_service_s3 import ImageService
+            from services.ideogram_image_service_s3 import IdeogramImageService
             from services.s3_service import S3Service
             from doodly_pipeline import png_to_svg, animate_svg, concatenate_videos
             from moviepy.editor import AudioFileClip, concatenate_audioclips, VideoFileClip
@@ -286,7 +286,7 @@ def create_fastapi_app():
             job_id = str(uuid.uuid4())
             script_service = ScriptService()
             audio_service = AudioService()
-            image_service = ImageService()
+            image_service = IdeogramImageService()
             s3_service = S3Service()
 
             # Set image size based on video type
@@ -298,19 +298,19 @@ def create_fastapi_app():
             # Step 1: Split script into sentences
             sentences = script_service.split_script_into_sentences(req.script)
 
-            # Step 2: Generate audio for each sentence
-            audio_segments = []
-            for i, sentence in enumerate(sentences):
-                audio = await audio_service.generate_audio_per_sentence([sentence], f"{job_id}_{i}")
-                audio_segments.extend(audio)
+            # Step 2: Generate audio for each sentence (already async)
+            audio_segments = await audio_service.generate_audio_per_sentence(sentences, job_id, req.voice_id)
 
-            # Step 3: Generate images for each sentence
-            image_urls = []
-            for i, seg in enumerate(audio_segments):
-                image_url = image_service.generate_sketch_image_with_quality(
+            # Step 3: Generate images for each sentence in parallel
+            import asyncio
+            image_tasks = [
+                asyncio.to_thread(
+                    image_service.generate_sketch_image_with_quality,
                     seg['sentence'], job_id, i, req.image_quality, image_size
                 )
-                image_urls.append(image_url)
+                for i, seg in enumerate(audio_segments)
+            ]
+            image_urls = await asyncio.gather(*image_tasks)
 
             # Step 4: Download images, convert to SVG, animate SVG
             svg_paths = []
@@ -469,9 +469,9 @@ def create_fastapi_app():
         modal.Secret.from_name("aws-s3-credentials")
     ],
     timeout=3600,
-    memory=4096,
-    cpu=2.0,
-    allow_concurrent_inputs=5
+    memory=16384,   # 16GB RAM
+    cpu=8.0,        # 8 CPUs
+    allow_concurrent_inputs=10  # 10 concurrent jobs
 )
 @modal.asgi_app()
 def fastapi_app():

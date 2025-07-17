@@ -1,14 +1,48 @@
+# Web Framework
 fastapi==0.104.1
 uvicorn==0.24.0
 python-multipart==0.0.6
+
+# AI Services
 openai>=1.10.0
 elevenlabs==0.2.26
-moviepy==1.0.3
+
+# Image Processing
 Pillow==10.1.0
-python-dotenv==1.0.0
-requests==2.31.0
+opencv-python==4.8.1.78
+
+# Video Processing
+moviepy==1.0.3
+manim==0.18.0
+
+# SVG Processing
+svgpathtools==1.6.1
+svgwrite==1.4.3
+
+# Data Processing
+numpy==1.24.3
 pydantic==2.5.0
+
+# HTTP and File Handling
+requests==2.31.0
 aiofiles==23.2.1
+
+# Environment and Configuration
+python-dotenv==1.0.0
+
+# Authentication and Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-jinja2==3.1.2 
+
+# Template Engine
+jinja2==3.1.2
+
+# AWS S3 Integration (optional)
+boto3==1.34.0
+
+# Audio Processing
+whisper-openai==20231117
+
+# Development and Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1 

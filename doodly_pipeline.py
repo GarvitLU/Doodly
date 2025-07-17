@@ -16,7 +16,7 @@ import json
 IMAGES_DIR = 'outputs'
 AUDIO_PATH = None  # Set to your audio file path, e.g., 'outputs/audio_<job_id>.mp3'
 OUTPUT_VIDEO = 'outputs/final_doodly_video.mp4'
-RUN_TIME_PER_IMAGE = 2  # seconds per image animation
+DEFAULT_RUN_TIME_PER_IMAGE = 2  # seconds per image animation (fallback)
 
 # --- 1. Convert PNGs to SVGs ---
 def png_to_svg(png_path, output_dir=None):
@@ -257,12 +257,40 @@ def main():
         if fname.startswith('audio_') and fname.endswith('.mp3'):
             AUDIO_PATH = os.path.join(IMAGES_DIR, fname)
             break
+    
+    # Calculate timing based on audio duration
+    audio_duration = 0
+    if AUDIO_PATH and os.path.exists(AUDIO_PATH):
+        from moviepy.editor import AudioFileClip
+        audio_clip = AudioFileClip(AUDIO_PATH)
+        audio_duration = audio_clip.duration
+        audio_clip.close()
+        print(f'Audio duration: {audio_duration} seconds')
+    
+    # Get all PNG images
+    png_files = [fname for fname in sorted(os.listdir(IMAGES_DIR)) if fname.endswith('.png')]
+    num_images = len(png_files)
+    
+    if num_images == 0:
+        print('No PNG images found in outputs directory')
+        return
+    
+    # Calculate duration per image based on audio length
+    if audio_duration > 0:
+        duration_per_image = audio_duration / num_images
+        print(f'Calculated {duration_per_image:.2f} seconds per image based on audio duration')
+    else:
+        duration_per_image = DEFAULT_RUN_TIME_PER_IMAGE
+        print(f'Using default {duration_per_image} seconds per image (no audio found)')
+    
     print('Converting PNGs to SVGs...')
-    svg_paths = [png_to_svg(os.path.join(IMAGES_DIR, fname)) for fname in sorted(os.listdir(IMAGES_DIR)) if fname.endswith('.png')]
+    svg_paths = [png_to_svg(os.path.join(IMAGES_DIR, fname)) for fname in png_files]
+    
     print('Animating SVGs with Manim...')
     video_paths = []
     for i, svg_path in enumerate(svg_paths):
-        video_path = animate_svg(svg_path, RUN_TIME_PER_IMAGE, f"svg_anim_{i}.mp4")
+        print(f'Animating image {i+1}/{num_images} with duration {duration_per_image:.2f}s')
+        video_path = animate_svg(svg_path, duration_per_image, f"svg_anim_{i}.mp4")
         video_paths.append(video_path)
 
     print('Video paths:', video_paths)

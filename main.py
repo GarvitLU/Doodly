@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
 import uuid
-from services.image_service import ImageService
+from services.ideogram_image_service import IdeogramImageService
 import subprocess
 from doodly_pipeline import png_to_svg, animate_svg, concatenate_videos
 import glob
@@ -46,11 +46,12 @@ class ScriptVideoRequest(BaseModel):
     animation_duration: float = None  # Optional: duration for each image animation
 
 print('DEBUG: OPENAI_API_KEY:', os.getenv('OPENAI_API_KEY'))
+print('DEBUG: IDEOGRAM_API_KEY:', os.getenv('IDEOGRAM_API_KEY'))
 
 @app.post("/generate-image")
 async def generate_image(req: GenImageRequest):
     job_id = str(uuid.uuid4())
-    image_service = ImageService()
+    image_service = IdeogramImageService()
     image_path = image_service.generate_sketch_image(req.prompt, job_id, 0)
     # Move image to apiOutputs
     new_image_path = os.path.join(API_OUTPUTS_DIR, os.path.basename(image_path))
@@ -137,7 +138,7 @@ async def generate_script_video(req: ScriptVideoRequest):
         # Initialize services
         script_service = ScriptService()
         audio_service = AudioService()
-        image_service = ImageService()
+        image_service = IdeogramImageService()
         video_generator = VideoGenerator()
         s3_service = S3Service()
         
@@ -178,25 +179,58 @@ async def generate_script_video(req: ScriptVideoRequest):
         # Step 4: Convert images to SVGs and animate them with per-sentence duration
         print("🎬 Step 4: Converting to SVGs and animating with per-sentence duration...")
         from doodly_pipeline import png_to_svg, animate_svg, concatenate_videos
+        import requests
         svg_video_paths = []
+        
+        def download_image_if_needed(image_path, job_id, index):
+            """Download image from S3 URL if needed, return local path"""
+            if image_path.startswith('http'):
+                # Download from S3 URL
+                response = requests.get(image_path)
+                if response.status_code == 200:
+                    local_path = f"outputs/image_{job_id}_{index}_local.png"
+                    with open(local_path, 'wb') as f:
+                        f.write(response.content)
+                    return local_path
+                else:
+                    raise Exception(f"Failed to download image from {image_path}")
+            else:
+                # Already a local path
+                return image_path
+        
         for i, (image_path, seg) in enumerate(zip(image_paths, audio_segments)):
-            svg_path = png_to_svg(image_path)
+            # Download image locally if it's an S3 URL
+            local_image_path = download_image_if_needed(image_path, job_id, i)
+            
+            svg_path = png_to_svg(local_image_path)
             out_name = f"svg_anim_{job_id}_{i}.mp4"
-            # Use animation_duration if provided, else use seg['duration']
+            
+            # Use the exact audio duration for perfect synchronization
+            # If animation_duration is provided, use it; otherwise use the actual audio duration
             duration = req.animation_duration if req.animation_duration is not None else seg['duration']
+            
+            # Ensure minimum duration for smooth animation
+            if duration < 1.0:
+                duration = 1.0
+            
+            print(f"   🎬 Animating frame {i+1}: {duration:.2f}s duration")
             video_path = animate_svg(svg_path, duration, out_name)
             new_video_path = os.path.join(API_OUTPUTS_DIR, out_name)
             os.rename(video_path, new_video_path)
             svg_video_paths.append(new_video_path)
-            # Cleanup SVG and PBM files
+            
+            # Cleanup SVG, PBM, and temporary local image files
             try:
                 if os.path.exists(svg_path):
                     os.remove(svg_path)
                 pbm_path = svg_path.replace('.svg', '.pbm')
                 if os.path.exists(pbm_path):
                     os.remove(pbm_path)
+                # Clean up temporary local image if it was downloaded
+                if local_image_path != image_path and os.path.exists(local_image_path):
+                    os.remove(local_image_path)
             except Exception as e:
-                print(f"Warning: Could not delete SVG/PBM: {e}")
+                print(f"Warning: Could not delete temporary files: {e}")
         
         # Step 5: Concatenate all SVG videos
         print("🎬 Step 5: Concatenating videos...")

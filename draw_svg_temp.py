@@ -6,13 +6,13 @@ class DrawSVGWithHand(Scene):
     def construct(self):
         self.camera.background_color = WHITE
         
-        svg_path = 'outputs/image_491d76a4-dcd2-4bfd-a8b2-9c32d54aa593_3.svg'
-        png_path = 'outputs/image_491d76a4-dcd2-4bfd-a8b2-9c32d54aa593_3.png'
+        svg_path = 'outputs/image_d346cd6d-2aff-4209-9a9f-d2080c9a6b4a_5_local.svg'
+        png_path = 'outputs/image_d346cd6d-2aff-4209-9a9f-d2080c9a6b4a_5_local.png'
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=3)
         svg.set_color(BLACK)
         svg.scale(3.0)
         self.add(svg)
-        self.play(Create(svg), run_time=3.79)
+        self.play(Create(svg), run_time=4.08)
         # Pop in the original image
         img = ImageMobject(png_path)
         img.width = svg.width

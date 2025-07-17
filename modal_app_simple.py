@@ -96,10 +96,10 @@ def create_fastapi_app():
     async def generate_image(req: GenImageRequest):
         """Generate a sketch image from a prompt"""
         try:
-            from services.image_service import ImageService
+            from services.ideogram_image_service import IdeogramImageService
             
             job_id = str(uuid.uuid4())
-            image_service = ImageService()
+            image_service = IdeogramImageService()
             
             image_path = image_service.generate_sketch_image(req.prompt, job_id, 0)
             # Move image to apiOutputs in volume
@@ -119,7 +119,7 @@ def create_fastapi_app():
         try:
             from services.script_service import ScriptService
             from services.audio_service import AudioService
-            from services.image_service import ImageService
+            from services.ideogram_image_service import IdeogramImageService
             from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
             
             job_id = str(uuid.uuid4())
@@ -127,7 +127,7 @@ def create_fastapi_app():
             # Initialize services
             script_service = ScriptService()
             audio_service = AudioService()
-            image_service = ImageService()
+            image_service = IdeogramImageService()
             
             # Set custom voice ID
             audio_service.set_voice(req.voice_id)

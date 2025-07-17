@@ -10,7 +10,7 @@ import sys
 from dotenv import load_dotenv
 from services.script_service import ScriptService
 from services.audio_service import AudioService
-from services.image_service import ImageService
+from services.ideogram_image_service import IdeogramImageService
 from services.video_generator import VideoGenerator
 import uuid
 
@@ -20,7 +20,7 @@ class WhiteboardVideoCLI:
     def __init__(self):
         self.script_service = ScriptService()
         self.audio_service = AudioService()
-        self.image_service = ImageService()
+        self.image_service = IdeogramImageService()
         self.video_generator = VideoGenerator()
     
     async def generate_video(
