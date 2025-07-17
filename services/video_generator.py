@@ -7,9 +7,23 @@ from PIL import Image
 import math
 
 class VideoGenerator:
-    def __init__(self):
-        self.output_width = 1920
-        self.output_height = 1080
+    def __init__(self, video_type: str = "landscape"):
+        """
+        Initialize video generator with orientation support
+        video_type: "landscape" or "portrait"
+        """
+        self.video_type = video_type
+        
+        # Set dimensions based on orientation
+        if video_type == "portrait":
+            self.output_width = 1024
+            self.output_height = 1536  # Tall portrait (1024x1536)
+            print(f"[VideoGenerator] Initialized for PORTRAIT format: {self.output_width}x{self.output_height}")
+        else:  # landscape
+            self.output_width = 1536
+            self.output_height = 1024
+            print(f"[VideoGenerator] Initialized for LANDSCAPE format: {self.output_width}x{self.output_height}")
+        
         self.fps = 30
     
     async def create_video(
@@ -19,13 +33,26 @@ class VideoGenerator:
         job_id: str,
         duration_per_frame: float = 3.0,
         include_background_music: bool = False,
-        include_hand_animation: bool = False
+        include_hand_animation: bool = False,
+        video_type: str = None
     ) -> str:
         """
         Create a whiteboard animation video from audio and images
         """
         try:
-            print(f"Creating video for job {job_id}")
+            # Update video type if provided
+            if video_type:
+                self.video_type = video_type
+                if video_type == "portrait":
+                    self.output_width = 1024
+                    self.output_height = 1536  # Tall portrait (1024x1536)
+                else:  # landscape
+                    self.output_width = 1536
+                    self.output_height = 1024
+                print(f"[VideoGenerator] Updated to {video_type.upper()} format: {self.output_width}x{self.output_height}")
+            
+            print(f"Creating {self.video_type} video for job {job_id}")
+            print(f"Video dimensions: {self.output_width}x{self.output_height}")
             
             # Load audio
             audio_clip = AudioFileClip(audio_path)
@@ -48,8 +75,8 @@ class VideoGenerator:
                     # Create image clip with calculated duration
                     image_clip = ImageClip(image_path, duration=frame_duration)
                     
-                    # Resize image to fit video dimensions
-                    image_clip = image_clip.resize((self.output_width, self.output_height))
+                    # Properly resize image to fit video dimensions while maintaining aspect ratio
+                    image_clip = self._resize_with_padding(image_clip, self.output_width, self.output_height)
                     
                     # Add subtle fade in/out effects (shorter for smoother transitions)
                     image_clip = image_clip.fadein(0.3).fadeout(0.3)
@@ -83,8 +110,9 @@ class VideoGenerator:
             # Set video properties
             final_video = final_video.set_fps(self.fps)
             
-            # Export video
-            output_path = f"outputs/video_{job_id}.mp4"
+            # Export video with orientation-specific filename
+            orientation_suffix = "_portrait" if self.video_type == "portrait" else "_landscape"
+            output_path = f"outputs/video_{job_id}{orientation_suffix}.mp4"
             final_video.write_videofile(
                 output_path,
                 codec='libx264',
@@ -101,7 +129,7 @@ class VideoGenerator:
             for clip in video_clips:
                 clip.close()
             
-            print(f"Video created successfully: {output_path}")
+            print(f"{self.video_type.capitalize()} video created successfully: {output_path}")
             return output_path
             
         except Exception as e:
@@ -231,3 +259,64 @@ class VideoGenerator:
         except Exception as e:
             print(f"Error creating simple video: {str(e)}")
             raise Exception(f"Failed to create simple video: {str(e)}") 
+
+    def _resize_with_padding(self, clip, target_width, target_height):
+        """
+        Resize image clip to target dimensions while maintaining aspect ratio using padding
+        """
+        # Get original dimensions
+        original_width = clip.w
+        original_height = clip.h
+        
+        # Calculate aspect ratios
+        target_ratio = target_width / target_height
+        original_ratio = original_width / original_height
+        
+        print(f"[VideoGenerator] Original: {original_width}x{original_height} ({original_ratio:.2f})")
+        print(f"[VideoGenerator] Target: {target_width}x{target_height} ({target_ratio:.2f})")
+        
+        if original_ratio > target_ratio:
+            # Original is wider than target - fit to width, pad height
+            new_width = target_width
+            new_height = int(target_width / original_ratio)
+            pad_top = (target_height - new_height) // 2
+            pad_bottom = target_height - new_height - pad_top
+            
+            print(f"[VideoGenerator] Fitting to width: {new_width}x{new_height}, padding: {pad_top}+{pad_bottom}")
+            
+            # Resize to fit width
+            resized_clip = clip.resize(width=new_width)
+            
+            # Create padded clip
+            def add_padding(get_frame, t):
+                frame = get_frame(t)
+                # Create white background
+                padded_frame = np.full((target_height, target_width, 3), 255, dtype=np.uint8)
+                # Place the resized frame in the center
+                padded_frame[pad_top:pad_top+new_height, :] = frame
+                return padded_frame
+            
+            return resized_clip.fl(add_padding)
+            
+        else:
+            # Original is taller than target - fit to height, pad width
+            new_width = int(target_height * original_ratio)
+            new_height = target_height
+            pad_left = (target_width - new_width) // 2
+            pad_right = target_width - new_width - pad_left
+            
+            print(f"[VideoGenerator] Fitting to height: {new_width}x{new_height}, padding: {pad_left}+{pad_right}")
+            
+            # Resize to fit height
+            resized_clip = clip.resize(height=new_height)
+            
+            # Create padded clip
+            def add_padding(get_frame, t):
+                frame = get_frame(t)
+                # Create white background
+                padded_frame = np.full((target_height, target_width, 3), 255, dtype=np.uint8)
+                # Place the resized frame in the center
+                padded_frame[:, pad_left:pad_left+new_width] = frame
+                return padded_frame
+            
+            return resized_clip.fl(add_padding) 

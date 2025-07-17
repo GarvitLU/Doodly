@@ -56,22 +56,54 @@ class IdeogramImageService:
             aspect_ratio = self._map_size_to_aspect_ratio(size)
             
             # Create image generation request
-            image_url = self._create_image_generation(prompt, aspect_ratio)
-            print(f"[IdeogramImageService] Generation completed, image URL: {image_url}")
+            try:
+                image_url = self._create_image_generation(prompt, aspect_ratio)
+                print(f"[IdeogramImageService] Generation completed, image URL: {image_url}")
+            except Exception as ideogram_error:
+                print(f"[IdeogramImageService] Ideogram failed: {str(ideogram_error)}")
+                
+                # Check if we have OpenAI as fallback
+                openai_key = os.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    print(f"[IdeogramImageService] Falling back to OpenAI DALL-E...")
+                    try:
+                        from .image_service import ImageService
+                        openai_service = ImageService()
+                        return openai_service.generate_sketch_image_with_quality(sentence, job_id, frame_index, quality, size)
+                    except Exception as openai_error:
+                        print(f"[IdeogramImageService] OpenAI fallback also failed: {str(openai_error)}")
+                        raise Exception(f"Both Ideogram and OpenAI failed. Ideogram: {str(ideogram_error)}. OpenAI: {str(openai_error)}")
+                else:
+                    print(f"[IdeogramImageService] No OpenAI API key found for fallback")
+                    raise ideogram_error
 
             # Create temporary local path
-            temp_image_path = f"outputs/image_{job_id}_{frame_index}.png"
-            os.makedirs("outputs", exist_ok=True)
+            outputs_dir = os.getenv("OUTPUTS_DIR", "outputs")
+            temp_image_path = f"{outputs_dir}/image_{job_id}_{frame_index}.png"
+            os.makedirs(outputs_dir, exist_ok=True)
 
             # Download and save the image
             self._download_and_save_image(image_url, temp_image_path)
             print(f"[IdeogramImageService] Image saved to {temp_image_path}")
+            
+            # DEBUG: Verify file was created
+            if not os.path.exists(temp_image_path):
+                print(f"ERROR: Image file was not created: {temp_image_path}")
+                raise Exception("Image generation failed, file not created.")
+            else:
+                print(f"DEBUG: Image file verified to exist: {temp_image_path}")
             
             # Upload to S3 if available
             if self.use_s3:
                 try:
                     s3_url = self.s3_service.upload_image(temp_image_path, job_id, frame_index)
                     print(f"[IdeogramImageService] Image uploaded to S3: {s3_url}")
+                    
+                    # DEBUG: Verify S3 URL is valid
+                    if not s3_url or not s3_url.startswith('http'):
+                        print(f"ERROR: Invalid S3 URL returned: {s3_url}")
+                        raise Exception("S3 upload failed, invalid URL returned.")
+                    
                     # Clean up local file
                     os.remove(temp_image_path)
                     return s3_url

@@ -44,8 +44,9 @@ class IdeogramImageService:
             print(f"[IdeogramImageService] Script analysis - involves_people: {involves_people}")
 
             # Determine orientation for prompt optimization
-            is_portrait = size == "1024x1024" or size == "1024x1536"
+            is_portrait = size == "1024x1536"  # Tall portrait
             is_landscape = size == "1536x1024"
+            is_square = size == "1024x1024"
 
             # Generate the enhanced prompt
             prompt = self._create_enhanced_sketch_prompt(sentence, involves_people, is_portrait, is_landscape)
@@ -54,9 +55,28 @@ class IdeogramImageService:
             # Map size to aspect ratio
             aspect_ratio = self._map_size_to_aspect_ratio(size)
             
-            # Create image generation request
-            image_url = self._create_image_generation(prompt, aspect_ratio)
-            print(f"[IdeogramImageService] Generation completed, image URL: {image_url}")
+            # Try Ideogram AI first
+            try:
+                image_url = self._create_image_generation(prompt, aspect_ratio)
+                print(f"[IdeogramImageService] Generation completed, image URL: {image_url}")
+            except Exception as ideogram_error:
+                print(f"[IdeogramImageService] Ideogram AI failed: {str(ideogram_error)}")
+                
+                # Check if we have OpenAI as fallback
+                openai_key = os.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    print(f"[IdeogramImageService] Falling back to OpenAI DALL-E...")
+                    try:
+                        from .image_service import ImageService
+                        openai_service = ImageService()
+                        image_url = openai_service.generate_sketch_image_with_quality(sentence, job_id, frame_index, quality, size)
+                        print(f"[IdeogramImageService] OpenAI fallback successful: {image_url}")
+                    except Exception as openai_error:
+                        print(f"[IdeogramImageService] OpenAI fallback also failed: {str(openai_error)}")
+                        raise Exception(f"Both Ideogram AI and OpenAI DALL-E failed. Ideogram error: {str(ideogram_error)}. OpenAI error: {str(openai_error)}")
+                else:
+                    print(f"[IdeogramImageService] No OpenAI API key found for fallback")
+                    raise ideogram_error
 
             # Create temporary local path
             temp_image_path = f"outputs/image_{job_id}_{frame_index}.png"
@@ -146,10 +166,9 @@ class IdeogramImageService:
         Map image size to Ideogram aspect ratio format
         """
         size_map = {
-            "1024x1024": "ASPECT_1_1",      # Square (Portrait)
+            "1024x1024": "ASPECT_1_1",      # Square
             "1536x1024": "ASPECT_3_2",      # Landscape
             "1024x1536": "ASPECT_2_3",      # Portrait (tall)
-            "1024x1024": "ASPECT_1_1"       # Square (Portrait) - duplicate removed
         }
         
         aspect_ratio = size_map.get(size, "ASPECT_1_1")
@@ -157,7 +176,7 @@ class IdeogramImageService:
         
         # Log orientation info
         if size == "1024x1024":
-            print(f"[IdeogramImageService] Using PORTRAIT orientation (1:1 square)")
+            print(f"[IdeogramImageService] Using SQUARE orientation (1:1)")
         elif size == "1536x1024":
             print(f"[IdeogramImageService] Using LANDSCAPE orientation (3:2)")
         elif size == "1024x1536":
@@ -169,7 +188,7 @@ class IdeogramImageService:
 
     def _create_image_generation(self, prompt: str, aspect_ratio: str) -> str:
         """
-        Create an image generation request with Ideogram API
+        Create an image generation request with Ideogram API with retry logic
         """
         headers = {
             "Api-Key": self.api_key,
@@ -188,28 +207,96 @@ class IdeogramImageService:
             }
         }
         
-        print(f"[IdeogramImageService] Making API request to: {self.base_url}/generate")
-        print(f"[IdeogramImageService] Payload: {payload}")
+        max_retries = 3
+        retry_delay = 2  # seconds
         
-        response = requests.post(
-            f"{self.base_url}/generate",
-            headers=headers,
-            json=payload
-        )
+        for attempt in range(max_retries):
+            try:
+                print(f"[IdeogramImageService] Making API request to: {self.base_url}/generate (attempt {attempt + 1}/{max_retries})")
+                print(f"[IdeogramImageService] Payload: {payload}")
+                
+                response = requests.post(
+                    f"{self.base_url}/generate",
+                    headers=headers,
+                    json=payload,
+                    timeout=60  # 60 second timeout
+                )
+                
+                print(f"[IdeogramImageService] Response status: {response.status_code}")
+                
+                # Handle different response codes
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # Extract image URL from response
+                    if "data" in data and len(data["data"]) > 0:
+                        return data["data"][0]["url"]
+                    else:
+                        raise Exception("No image URL found in Ideogram API response")
+                
+                elif response.status_code == 502:
+                    # Bad Gateway - server issue, retry after delay
+                    if attempt < max_retries - 1:
+                        print(f"[IdeogramImageService] 502 Bad Gateway error, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        raise Exception(f"Ideogram API server error (502) after {max_retries} attempts. Please try again later.")
+                
+                elif response.status_code == 429:
+                    # Rate limit exceeded
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (attempt + 1)
+                        print(f"[IdeogramImageService] Rate limit exceeded, waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise Exception("Ideogram API rate limit exceeded. Please try again later.")
+                
+                elif response.status_code == 401:
+                    # Unauthorized - API key issue
+                    raise Exception("Invalid Ideogram API key. Please check your IDEOGRAM_API_KEY.")
+                
+                elif response.status_code == 400:
+                    # Bad request - check the error details
+                    error_text = response.text[:200]  # Limit error text length
+                    raise Exception(f"Ideogram API bad request (400): {error_text}")
+                
+                else:
+                    # Other errors
+                    error_text = response.text[:200]  # Limit error text length
+                    raise Exception(f"Ideogram API error: {response.status_code} - {error_text}")
+                    
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    print(f"[IdeogramImageService] Request timeout, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    raise Exception("Ideogram API request timed out after multiple attempts.")
+                    
+            except requests.exceptions.ConnectionError:
+                if attempt < max_retries - 1:
+                    print(f"[IdeogramImageService] Connection error, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    raise Exception("Failed to connect to Ideogram API. Please check your internet connection.")
+                    
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"[IdeogramImageService] Error: {str(e)}, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    raise e
         
-        print(f"[IdeogramImageService] Response status: {response.status_code}")
-        print(f"[IdeogramImageService] Response text: {response.text}")
-        
-        if response.status_code != 200:
-            raise Exception(f"Ideogram API error: {response.status_code} - {response.text}")
-        
-        data = response.json()
-        
-        # Extract image URL from response
-        if "data" in data and len(data["data"]) > 0:
-            return data["data"][0]["url"]
-        else:
-            raise Exception("No image URL found in Ideogram API response")
+        # If we get here, all retries failed
+        raise Exception(f"Failed to generate image after {max_retries} attempts.")
 
     def _create_enhanced_sketch_prompt(self, sentence: str, involves_people: bool, is_portrait: bool = False, is_landscape: bool = False) -> str:
         """

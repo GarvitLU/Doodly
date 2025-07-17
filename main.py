@@ -139,7 +139,7 @@ async def generate_script_video(req: ScriptVideoRequest):
         script_service = ScriptService()
         audio_service = AudioService()
         image_service = IdeogramImageService()
-        video_generator = VideoGenerator()
+        video_generator = VideoGenerator(video_type=req.video_type)  # Initialize with correct orientation
         s3_service = S3Service()
         
         # Set custom voice ID
@@ -148,12 +148,12 @@ async def generate_script_video(req: ScriptVideoRequest):
         # Set image quality and size based on video type
         if req.video_type == "landscape":
             image_size = "1536x1024"
-            video_generator.output_width = 1536
-            video_generator.output_height = 1024
         else:  # portrait
-            image_size = "1024x1024"
-            video_generator.output_width = 1024
-            video_generator.output_height = 1024
+            image_size = "1024x1536"  # Tall portrait (1024x1536)
+        
+        print(f"🎬 Video type: {req.video_type.upper()}")
+        print(f"📐 Image size: {image_size}")
+        print(f"🎥 Video dimensions: {video_generator.output_width}x{video_generator.output_height}")
         
         # Step 1: Split script into sentences
         print("🖼️ Step 1: Splitting script into sentences...")
@@ -235,7 +235,7 @@ async def generate_script_video(req: ScriptVideoRequest):
         # Step 5: Concatenate all SVG videos
         print("🎬 Step 5: Concatenating videos...")
         final_video_path = os.path.join(MERGED_VIDEO_DIR, f"script_video_{job_id}.mp4")
-        concatenate_videos(svg_video_paths, final_video_path)
+        concatenate_videos(svg_video_paths, final_video_path, video_type=req.video_type)
         
         # Cleanup: Delete individual SVG video files
         print("🧹 Cleaning up individual SVG video files...")

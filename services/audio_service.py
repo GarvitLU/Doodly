@@ -31,10 +31,19 @@ class AudioService:
             )
             
             # Save audio file
-            audio_path = f"outputs/audio_{job_id}.mp3"
+            outputs_dir = os.getenv("OUTPUTS_DIR", "outputs")
+            audio_path = f"{outputs_dir}/audio_{job_id}.mp3"
             save(audio, audio_path)
             
             print(f"Audio generated and saved to {audio_path}")
+            
+            # DEBUG: Verify file was created
+            if not os.path.exists(audio_path):
+                print(f"ERROR: Audio file was not created: {audio_path}")
+                raise Exception("Audio generation failed, file not created.")
+            else:
+                print(f"DEBUG: Audio file verified to exist: {audio_path}")
+            
             return audio_path
             
         except Exception as e:
@@ -54,8 +63,17 @@ class AudioService:
                 voice=self.default_voice,
                 model=self.default_model
             )
-            audio_path = f"outputs/audio_{job_id}_{i}.mp3"
+            outputs_dir = os.getenv("OUTPUTS_DIR", "outputs")
+            audio_path = f"{outputs_dir}/audio_{job_id}_{i}.mp3"
             save(audio, audio_path)
+            
+            # DEBUG: Verify file was created
+            if not os.path.exists(audio_path):
+                print(f"ERROR: Audio file was not created: {audio_path}")
+                raise Exception(f"Audio generation failed for sentence {i}, file not created.")
+            else:
+                print(f"DEBUG: Audio file verified to exist: {audio_path}")
+            
             # Get duration
             duration = AudioFileClip(audio_path).duration
             audio_segments.append({

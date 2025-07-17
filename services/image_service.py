@@ -58,7 +58,8 @@ class ImageService:
             image_url = getattr(image_data_obj, 'url', None)
             b64_json = getattr(image_data_obj, 'b64_json', None)
 
-            image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            outputs_dir = os.getenv("OUTPUTS_DIR", "outputs")
+            image_path = f"{outputs_dir}/image_{job_id}_{frame_index}.png"
 
             if image_url:
                 self._download_and_save_image(image_url, image_path)
@@ -117,7 +118,8 @@ class ImageService:
             image_url = getattr(image_data_obj, 'url', None)
             b64_json = getattr(image_data_obj, 'b64_json', None)
 
-            image_path = f"outputs/image_{job_id}_{frame_index}.png"
+            outputs_dir = os.getenv("OUTPUTS_DIR", "outputs")
+            image_path = f"{outputs_dir}/image_{job_id}_{frame_index}.png"
 
             if image_url:
                 self._download_and_save_image(image_url, image_path)
