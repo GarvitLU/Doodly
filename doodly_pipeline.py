@@ -110,17 +110,28 @@ class DrawSVGWithHand(Scene):
         {heading_code}
         svg_path = '{svg_path}'
         png_path = '{png_path}'
+        
+        # Create the SVG for drawing animation
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=3)
         svg.set_color(BLACK)
         svg.scale(3.0)
-        self.add(svg)
-        self.play(Create(svg), run_time={duration})
-        # Pop in the original image
+        
+        # Create the final image (same size and position as SVG)
         img = ImageMobject(png_path)
         img.width = svg.width
         img.height = svg.height
         img.move_to(svg.get_center())
-        self.play(FadeIn(img), FadeOut(svg), run_time=0.5)
+        
+        # Start with the SVG drawing animation
+        self.add(svg)
+        self.play(Create(svg), run_time={duration})
+        
+        # Seamlessly replace SVG with final image (no visible transition)
+        # The image is already positioned exactly where the SVG is
+        self.remove(svg)
+        self.add(img)
+        
+        # Hold the final image for a moment
         self.wait(0.5)
 """
     script_path = f"draw_svg_temp.py"
@@ -139,8 +150,14 @@ class DrawSVGWithHand(Scene):
     if not video_path:
         raise Exception('SVG animation video not found')
     if output_dir:
+        import shutil
         new_video_path = os.path.join(output_dir, out_name)
-        os.rename(video_path, new_video_path)
+        shutil.copy2(video_path, new_video_path)
+        # Clean up the original file
+        try:
+            os.remove(video_path)
+        except:
+            pass
         return new_video_path
     return video_path
 
@@ -166,17 +183,36 @@ class DrawSVGWordSync(Scene):
         self.camera.background_color = WHITE
         {heading_code}
         svg_path = '{svg_path}'
+        png_path = svg_path.replace('.svg', '.png')
         mapping = json.loads('''{mapping_json}''')
+        
+        # Create the SVG for drawing animation
         svg = SVGMobject(svg_path, fill_opacity=0, stroke_width=2)
         svg.set_color(BLACK)
         svg.scale(3.0)
+        
+        # Create the final image (same size and position as SVG)
+        img = ImageMobject(png_path)
+        img.width = svg.width
+        img.height = svg.height
+        img.move_to(svg.get_center())
+        
+        # Start with the SVG
         self.add(svg)
+        
+        # Animate each element in sync with word timings
         for item in mapping:
             elem_id = item['svg_element']['id']
             if elem_id:
                 sub_svg = [el for el in svg.submobjects if hasattr(el, 'id') and el.id == elem_id]
                 if sub_svg:
                     self.play(Create(sub_svg[0]), run_time=item['end']-item['start'])
+        
+        # Seamlessly replace SVG with final image (no visible transition)
+        self.remove(svg)
+        self.add(img)
+        
+        # Hold the final image
         self.wait(0.5)
 """
     script_path = f"draw_svg_temp.py"
@@ -185,29 +221,73 @@ class DrawSVGWordSync(Scene):
     return script_path
 
 # --- 3. Concatenate Videos and Add Audio ---
-def concatenate_videos(video_paths, output_path):
+def concatenate_videos(video_paths, output_path, video_type="landscape"):
     from moviepy.editor import VideoFileClip, concatenate_videoclips
+    import numpy as np
+    
+    # Set output dimensions based on video type
+    if video_type == "portrait":
+        output_width = 1024
+        output_height = 1536  # Tall portrait (1024x1536)
+    else:  # landscape
+        output_width = 1536
+        output_height = 1024
+    
+    print(f"[DoodlyPipeline] Concatenating videos in {video_type.upper()} format: {output_width}x{output_height}")
+    
     clips = [VideoFileClip(v) for v in video_paths]
-    final = concatenate_videoclips(clips, method="compose")
-    final.write_videofile(output_path, codec='libx264', audio=False)
+    
+    # Resize all clips to match the target orientation with proper aspect ratio handling
+    resized_clips = []
+    for i, clip in enumerate(clips):
+        resized_clip = resize_with_padding(clip, output_width, output_height)
+        resized_clips.append(resized_clip)
+        print(f"[DoodlyPipeline] Resized clip {i+1} to {output_width}x{output_height} with padding")
+    
+    final = concatenate_videoclips(resized_clips, method="compose")
+    final.write_videofile(output_path, codec='libx264', audio=False, verbose=False, logger=None)
+    
+    # Clean up
+    final.close()
     for c in clips:
         c.close()
+    for c in resized_clips:
+        c.close()
+    
     return output_path
 
-def merge_videos_and_audio(video_paths, audio_path, output_path):
+def merge_videos_and_audio(video_paths, audio_path, output_path, video_type="landscape"):
     """
-    Merge video clips and add audio to create final video
+    Merge video clips and add audio to create final video with orientation support
     """
     from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip
+    import numpy as np
     
     if not video_paths:
         raise Exception("No video paths provided")
     
+    # Set output dimensions based on video type
+    if video_type == "portrait":
+        output_width = 1024
+        output_height = 1536  # Tall portrait (1024x1536)
+    else:  # landscape
+        output_width = 1536
+        output_height = 1024
+    
+    print(f"[DoodlyPipeline] Merging videos in {video_type.upper()} format: {output_width}x{output_height}")
+    
     # Load video clips
     clips = [VideoFileClip(v) for v in video_paths]
     
+    # Resize all clips to match the target orientation with proper aspect ratio handling
+    resized_clips = []
+    for i, clip in enumerate(clips):
+        resized_clip = resize_with_padding(clip, output_width, output_height)
+        resized_clips.append(resized_clip)
+        print(f"[DoodlyPipeline] Resized clip {i+1} to {output_width}x{output_height} with padding")
+    
     # Concatenate videos
-    final_video = concatenate_videoclips(clips, method="compose")
+    final_video = concatenate_videoclips(resized_clips, method="compose")
     
     # Add audio if provided
     if audio_path and os.path.exists(audio_path):
@@ -221,8 +301,71 @@ def merge_videos_and_audio(video_paths, audio_path, output_path):
     final_video.close()
     for clip in clips:
         clip.close()
+    for clip in resized_clips:
+        clip.close()
     
     return output_path
+
+def resize_with_padding(clip, target_width, target_height):
+    """
+    Resize video clip to target dimensions while maintaining aspect ratio using padding
+    """
+    # Get original dimensions
+    original_width = clip.w
+    original_height = clip.h
+    
+    # Calculate aspect ratios
+    target_ratio = target_width / target_height
+    original_ratio = original_width / original_height
+    
+    print(f"[DoodlyPipeline] Original: {original_width}x{original_height} ({original_ratio:.2f})")
+    print(f"[DoodlyPipeline] Target: {target_width}x{target_height} ({target_ratio:.2f})")
+    
+    if original_ratio > target_ratio:
+        # Original is wider than target - fit to width, pad height
+        new_width = target_width
+        new_height = int(target_width / original_ratio)
+        pad_top = (target_height - new_height) // 2
+        pad_bottom = target_height - new_height - pad_top
+        
+        print(f"[DoodlyPipeline] Fitting to width: {new_width}x{new_height}, padding: {pad_top}+{pad_bottom}")
+        
+        # Resize to fit width
+        resized_clip = clip.resize(width=new_width)
+        
+        # Create padded clip
+        def add_padding(get_frame, t):
+            frame = get_frame(t)
+            # Create white background
+            padded_frame = np.full((target_height, target_width, 3), 255, dtype=np.uint8)
+            # Place the resized frame in the center
+            padded_frame[pad_top:pad_top+new_height, :] = frame
+            return padded_frame
+        
+        return resized_clip.fl(add_padding)
+        
+    else:
+        # Original is taller than target - fit to height, pad width
+        new_width = int(target_height * original_ratio)
+        new_height = target_height
+        pad_left = (target_width - new_width) // 2
+        pad_right = target_width - new_width - pad_left
+        
+        print(f"[DoodlyPipeline] Fitting to height: {new_width}x{new_height}, padding: {pad_left}+{pad_right}")
+        
+        # Resize to fit height
+        resized_clip = clip.resize(height=new_height)
+        
+        # Create padded clip
+        def add_padding(get_frame, t):
+            frame = get_frame(t)
+            # Create white background
+            padded_frame = np.full((target_height, target_width, 3), 255, dtype=np.uint8)
+            # Place the resized frame in the center
+            padded_frame[:, pad_left:pad_left+new_width] = frame
+            return padded_frame
+        
+        return resized_clip.fl(add_padding)
 
 def map_words_to_svg_elements(words, svg_elements):
     """

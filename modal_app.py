@@ -1,3 +1,4 @@
+# Trigger Modal rebuild: force image refresh for boto3 integration, path fixes, cross-device link fixes, and S3 integration
 import modal
 import os
 import uuid
@@ -53,6 +54,7 @@ image = (
         "python-jose[cryptography]==3.3.0",
         "passlib[bcrypt]==1.7.4",
         "jinja2==3.1.2",
+        "boto3==1.34.0",
         "manim",
         "svgpathtools",
         "numpy",
@@ -60,13 +62,13 @@ image = (
         "svgwrite",
         "whisper-openai"
     ])
-    .add_local_file("main.py", "/app/main.py")
-    .add_local_file("doodly_pipeline.py", "/app/doodly_pipeline.py")
-    .add_local_file("cli.py", "/app/cli.py")
-    .add_local_dir("services", "/app/services")
-    .add_local_dir("templates", "/app/templates")
     .workdir("/app")
     .env({"PYTHONPATH": "/app"})
+    .add_local_file("main.py", "/app/main.py", copy=True)
+    .add_local_file("doodly_pipeline.py", "/app/doodly_pipeline.py", copy=True)
+    .add_local_file("cli.py", "/app/cli.py", copy=True)
+    .add_local_dir("services", "/app/services", copy=True)
+    .add_local_dir("templates", "/app/templates", copy=True)
 )
 
 # Create a volume for persistent storage
@@ -109,6 +111,17 @@ def create_fastapi_app():
     # Set environment variables
     os.environ["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
     os.environ["ELEVENLABS_API_KEY"] = os.environ.get("ELEVENLABS_API_KEY", "")
+    os.environ["IDEOGRAM_API_KEY"] = os.environ.get("IDEOGRAM_API_KEY", "")
+    
+    # Set AWS environment variables for S3
+    os.environ["AWS_ACCESS_KEY_ID"] = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+    os.environ["AWS_REGION"] = os.environ.get("AWS_REGION", "us-east-1")
+    os.environ["AWS_S3_BUCKET_NAME"] = os.environ.get("AWS_S3_BUCKET_NAME", "")
+    
+    # Set output directories for Modal deployment
+    os.environ["OUTPUTS_DIR"] = "/data/outputs"
+    os.environ["APIOUTPUTS_DIR"] = "/data/apiOutputs"
     
     # Mount static files
     web_app.mount("/apiOutputs", StaticFiles(directory="/data/apiOutputs"), name="apiOutputs")
@@ -123,9 +136,15 @@ def create_fastapi_app():
             image_service = IdeogramImageService()
             
             image_path = image_service.generate_sketch_image(req.prompt, job_id, 0)
-            # Move image to apiOutputs in volume
+            # Copy image to apiOutputs in volume
+            import shutil
             new_image_path = f"/data/apiOutputs/{os.path.basename(image_path)}"
-            os.rename(image_path, new_image_path)
+            shutil.copy2(image_path, new_image_path)
+            # Clean up original file
+            try:
+                os.remove(image_path)
+            except:
+                pass
             
             # Commit volume changes
             volume.commit()
@@ -148,11 +167,18 @@ def create_fastapi_app():
             out_name = f"svg_anim_{uuid.uuid4()}.mp4"
             video_path = animate_svg(svg_path, req.duration, out_name)
             
-            # Move files to volume
+            # Copy files to volume
+            import shutil
             new_svg_path = f"/data/apiOutputs/{os.path.basename(svg_path)}"
             new_video_path = f"/data/apiOutputs/{out_name}"
-            os.rename(svg_path, new_svg_path)
-            os.rename(video_path, new_video_path)
+            shutil.copy2(svg_path, new_svg_path)
+            shutil.copy2(video_path, new_video_path)
+            # Clean up original files
+            try:
+                os.remove(svg_path)
+                os.remove(video_path)
+            except:
+                pass
             
             # Cleanup
             pbm_path = new_svg_path.replace('.svg', '.pbm')
@@ -221,7 +247,13 @@ def create_fastapi_app():
                 video_path = animate_svg(svg_path, duration, out_name)
                 
                 new_video_path = f"/data/apiOutputs/{out_name}"
-                os.rename(video_path, new_video_path)
+                import shutil
+                shutil.copy2(video_path, new_video_path)
+                # Clean up original file
+                try:
+                    os.remove(video_path)
+                except:
+                    pass
                 svg_video_paths.append(new_video_path)
                 
                 # Cleanup
@@ -335,13 +367,15 @@ def create_fastapi_app():
     volumes={"/data": volume},
     secrets=[
         modal.Secret.from_name("openai-api-key"),
-        modal.Secret.from_name("ELEVENLABS_API_KEY")
+        modal.Secret.from_name("elevenlabs-api-key"),
+        modal.Secret.from_name("ideogram-api-key"),
+        modal.Secret.from_name("aws-s3-credentials")
     ],
     timeout=3600,  # 1 hour timeout
     memory=8192,   # 8GB memory
     cpu=4.0,       # 4 CPU cores
-    allow_concurrent_inputs=10
 )
+@modal.concurrent(max_inputs=10)
 @modal.asgi_app()
 def fastapi_app():
     """Create and return the FastAPI application"""
