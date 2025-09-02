@@ -21,9 +21,6 @@ class S3Service:
         self.bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
         
         # Debug prints for troubleshooting
-        print("DEBUG: S3Service bucket =", self.bucket_name)
-        print("DEBUG: S3Service region =", self.aws_region)
-        print("DEBUG: S3Service access key =", (self.aws_access_key_id or '')[:6], "...")
         
         # Set up logging (move this up before _ensure_bucket_exists)
         logging.basicConfig(level=logging.INFO)
